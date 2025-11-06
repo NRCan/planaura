@@ -98,7 +98,7 @@ Inference from Planaura can result in two outputs:
    1. The embeddings: These are high-dimensional feature vectors that summarize your images via the Planaura's encoder.
    2. The change map: Defined as cosine similarity map between any two images.
 
-Two sample scripts are provided to help you perform the inference. 
+Two sample scripts are provided to help you perform the inference tasks. 
 
    - /infer_scripts/infer_photo.py: When working with conventional images, this script should be used for inference.
    - /infer_scripts/infer_geotiff.py: When working with geotifs, this script should be used for inference.
