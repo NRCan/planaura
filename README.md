@@ -246,6 +246,14 @@ See the section "Sample usage" of this README for more details. You can run the 
 
      - model_params (dict): configurations used to create the model architecture. When using Planaura weights, do not change any of these parameters unless otherwise indicated.
 
+          - load_params (dict): parameters to load the model weights
+               - source (str): "local" or "huggingface". 
+                    If set to local, then provide the "checkpoint_path" of the weights on your local device.
+                    If set to huggingface, then provide the repo_id and model_name to download the model from huggingface.
+              - checkpoint_path (str): full path to the pth file of the model weights on your local device.
+              - repo_id (str): huggingface repo id of the Planaura models
+              - model_name (str): Planaura model name as hosted on huggingface
+
           - keep_pos_embedding (bool): the position embeddings are applied to both encoder and reconstruction decoder. 
                Set to true when using Planaura in bi-temporal mode.
                Set to false when using Planaura in static model.
@@ -296,8 +304,7 @@ Let's say I have these images of my zone of interest (Jasper area in Alberta, Ca
 Jasper experienced an unfortunate wildfire in August 2024. 
 My goal is to create a change map showing changes from 2023 (before the wildfire) to 2024 (immediately after thewildfire). 
 
-Note how for the HLS data I have fmask quality files too. 
-
+Note how for the HLS data I have fmask quality files too.
 If you don't have these, then don't worry (you can set the save_fmask_layer to false).
 
      2023 images:
@@ -592,6 +599,4 @@ If you use Planaura in your research, please cite this repository:
        publisher = {GitHub},
        url = {https://huggingface.co/NRCan/planaura}
      }
-     
-
-    
+ 
