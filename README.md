@@ -2,20 +2,27 @@
 # PLANAURA - Canadian Geospatial Foundation Models
 
 # What is Planaura?
-Planaura is a Canadian geospatial foundation model. 
 
-The model is trained with satellite imagery from two sources of harmonized landsat and sentinel (HLS) (https://hls.gsfc.nasa.gov/) 
+Planaura is a collection of Canadian geospatial foundation models produced at Canada Centre for Mapping and Earth Observation at Natural Resources Canada. 
+
+Planaura is trained with satellite imagery mainly from two sources of harmonized landsat and sentinel (HLS) (https://hls.gsfc.nasa.gov/) 
 and sentinel-2 (S2) (https://www.esa.int/Applications/Observing_the_Earth/Copernicus/Sentinel-2).
 The training data was selected to provide national coverage over the vast Canadian landscape through 
 10 years from 2015 to 2024. The training datasets were mainly acquired over periods 
 of June to September in each year, hence making Planaura best performing over spring/summer seasons for most of Canada.
 
-Two versions of this model exist, Planaura_HLS is best suited to be used with HLS imagery at resolutions of 30 meters.
-Planaura_S2 is best suited to be used with S2 imagery at resolutions of 10-20 meters. While Planaura_HLS generalizes well on either
+Two versions of Planaura are currently publicly available through HuggingFace.
+
+Planaura_HLS is best suited to be used with HLS imagery at resolutions of 30 meters.
+
+Planaura_S2 is best suited to be used with S2 imagery at resolutions of 10-20 meters. 
+
+While Planaura_HLS generalizes well on either
 of the data sources (S2 or HLS), the Planaura_S2 model was particularly fine-tuned with higher-resolution data, and 
 we have noticed that this specialized model performs slightly better on 10-meter imagery than the 
 Planaura_HLS and is able to extract finer levels of change when used for change detection.
 
+HuggingFace Repo: [To be added]
 
 Inputs to the model: 
    - In bi-temporal mode (num_frames=2): Two satellite images of the same location taken at two different epochs.
@@ -30,7 +37,7 @@ Inputs to the model:
      - band 5: short wave infrared with central wavelength of  2190 nm - B12
        
               
-The model contains a two-epoch (bi-temporal) encoder that facilitates:
+Planaura contains a two-epoch (bi-temporal) encoder that facilitates:
    1. Embedding images into feature maps that will be able to represent the descriptive features of each image and can subsequently be used for other tasks like clustering or classification.
    2. Calculating the intensity of change between two images representing the actual contextual changes and not naively the changes of spectral values.
 
@@ -280,6 +287,7 @@ You only need to make sure that the paths in the csv file reflect the placement 
                If you use Planaura with any other source of imagery, enter their respective stds along all their bands here.
 
 # Sample usage
+
 Example data is provided in the folder /examples.
 
 Let's say I have found these images of my zone of interest, and my goal is to create a change map showing changes from 2020 to 2023.
@@ -504,6 +512,9 @@ to the final mosaic_cosine_map.
 
 
 # References
+
+See [CONTRIBUTORS.md](./CONTRIBUTORS.md) for a full list of authors and contributors.
+
 The Prithvi-100M model was used as the starting point to create and train Planaura,
 to adapt it to Canadian landscape and to make it suitable for bi-epoch multiscale change detection.
 
@@ -558,8 +569,6 @@ Image sources used for training Planaura:
 
      Copernicus Sentinel-2 data
           Data retrieved from the Sentinel Hub
-
-See [CONTRIBUTORS.md](./CONTRIBUTORS.md) for a full list of authors and contributors.
 
 # Citation
 If you use Planaura in your research, please cite this repository:
