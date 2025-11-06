@@ -3,8 +3,7 @@
 .pytest_cache/
 src/planaura.egg-info/
 /grid_data_*
-examples/tmp_inference.csv
 weights/
+examples/tmp_inference.csv
 /examples/epoch2023/
 /examples/epoch2024/
-
