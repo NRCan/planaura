@@ -9,3 +9,5 @@ examples/tmp_inference.csv
 examples/epoch2023/*.xml
 examples/epoch2024/*.xml
 weights/
+/examples/epoch2023/
+/examples/epoch2024/
