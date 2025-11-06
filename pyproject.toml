@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "planaura"
+dynamic = ["version"]
+description = "Library for feature inference and change detection using Planaura - the Canadian geospatial foundation models"
+readme = "README.md"
+requires-python = ">=3.10"
+maintainers = [
+    { name = "Mozhdeh Shahbazi", email = "mozhdeh.shahbazi@nrcan-rncan.gc.ca" },
+    { name = "Mikhail Sokolov", email = "mikhail.sokolov@nrcan-rncan.gc.ca" },
+]
+license = { file = "LICENSE" }
+
+dependencies = [
+	"torchsummary==1.5.1",
+    "opencv-python==4.11.0.86",
+	"timm==0.4.12",
+	"mmsegmentation==1.2.2",
+    "scikit-image==0.24.0",
+    "scipy==1.15.2",
+    "pandas==2.2.3",
+    "matplotlib==3.10.1",
+    "pytest==8.3.5",
+    "einops==0.8.1",
+    "hydra-core==1.3.2",
+    "omegaconf==2.3.0",
+    "rasterio==1.3.10",
+	"parse==1.20.2",
+	"tifffile==2025.3.30",
+	"xarray==2024.10.0",
+	"dask==2024.10.0",
+	"rioxarray==0.18.1",
+    "tqdm==4.65.2",
+    "huggingface_hub==1.0.1",
+    "numpy==1.26.4"
+]
+
+[project.optional-dependencies]
+gpu = [
+    # torch + torchvision with CUDA 11.6 wheels
+    "torch==1.12.0+cu116",
+    "torchvision==0.13.0+cu116",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Auto-read version from AUTOVERSION file
+[tool.setuptools.dynamic]
+version = { file = "AUTOVERSION" }

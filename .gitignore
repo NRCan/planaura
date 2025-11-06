@@ -1,0 +1,11 @@
+**/__pycache__
+.idea/
+.pytest_cache/
+src/planaura.egg-info/
+/grid_data_*
+examples/epoch2023/inference/
+examples/epoch2024/inference/
+examples/tmp_inference.csv
+examples/epoch2023/*.xml
+examples/epoch2024/*.xml
+weights/

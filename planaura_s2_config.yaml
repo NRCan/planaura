@@ -1,0 +1,68 @@
+task_list: ["infer", "mosaic"]
+csv_inference_file: "<some_directory>/infer_data.csv"
+inference_save_folder_frame_0: "<some_directory>/inference_before"
+inference_save_folder_frame_1: "<some_directory>/inference_after"
+paths_included_in_csvs: true
+use_multi_gpu : false
+use_xarray: false
+batch_size: 4
+data_loader_num_workers: 1
+autocast_float16: true
+num_frames: 2
+save_reconstructed_images: true
+minimum_valid_percentage: 0.9
+concatenate_char: "!"
+num_predictions: 1
+tif_compression: "LZW"
+change_map:
+  return: true
+  upsample_cosine_map: true
+  save_dates_layer: true
+  date_regex: "\\_(\\d{8})_"
+feature_maps:
+  return: true
+  write_as_image: false
+  embeddings:
+mosaic_params:
+  delete_residues: true
+  target_crs: "EPSG:3979"
+  target_resolution: 10
+  mosaic_save_postfix: "something"
+model_params:
+  load_params:
+    source: "local"
+    checkpoint_path: "./weights/best_reconstruction_ddp_xarrray_s2_full_training_2.pth"
+    repo_id: ""
+    model_name: ""
+  keep_pos_embedding: true
+  backbone: "planaura_reconstruction"
+  bands: ["B02", "B03", "B04", "B8A", "B11", "B12"]
+  img_size: 512
+  depth: 12
+  decoder_depth: 8
+  patch_size: 16
+  patch_stride: 16
+  embed_attention: true
+  embed_dim: 768
+  decoder_embed_dim: 512
+  num_heads: 12
+  decoder_num_heads: 16
+  mask_ratio: 0.75
+  tubelet_size: 1
+  no_data: -9999
+  data_mean: [
+    1112.6296,
+    1294.6424,
+    1194.6553,
+    2941.6995,
+    1664.4121,
+    1025.6766
+  ]
+  data_std: [
+    2091.0797,
+    2022.7262,
+    2023.6636,
+    1491.4366,
+    880.0135,
+    711.8505
+  ]

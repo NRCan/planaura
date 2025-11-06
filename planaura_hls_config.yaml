@@ -1,0 +1,72 @@
+task_list: ["infer", "mosaic"]
+csv_inference_file: "./examples/infer_data.csv"
+inference_input_folder_frame_0: "./examples/epoch2023"
+inference_input_folder_frame_1: "./examples/epoch2024"
+inference_save_folder_frame_0: "./examples/epoch2023/inference"
+inference_save_folder_frame_1: "./examples/epoch2024/inference"
+paths_included_in_csvs: false
+use_multi_gpu : false
+use_xarray: false
+batch_size: 4
+data_loader_num_workers: 1
+autocast_float16: true
+num_frames: 2
+save_reconstructed_images: true
+minimum_valid_percentage: 0.7
+concatenate_char: "!"
+num_predictions: 1
+tif_compression: "LZW"
+change_map:
+  return: true
+  upsample_cosine_map: true
+  save_fmask_layer: true
+  fmask_in_bit: true
+  save_dates_layer: true
+  date_regex: "\\.(\\d{7})T"
+feature_maps:
+  return: true
+  write_as_image: true
+  embeddings: [0, 70, 71, 207, 356, 523]
+mosaic_params:
+  delete_residues: true
+  target_crs: "EPSG:3979"
+  target_resolution: 30
+  mosaic_save_postfix: "example"
+model_params:
+  load_params:
+    source: "local"
+    checkpoint_path: "./weights/best_reconstruction_ddp_xarrray_reduced_bf16mixed_new_params.pth"
+    repo_id: ""
+    model_name: ""
+  keep_pos_embedding: true
+  backbone: "planaura_reconstruction"
+  bands: ["B02", "B03", "B04", "B8A", "B11", "B12"]
+  img_size: 512
+  depth: 12
+  decoder_depth: 8
+  patch_size: 16
+  patch_stride: 16
+  embed_attention: true
+  embed_dim: 768
+  decoder_embed_dim: 512
+  num_heads: 12
+  decoder_num_heads: 16
+  mask_ratio: 0.75
+  tubelet_size: 1
+  no_data: -9999
+  data_mean: [
+    643.9851,
+    845.6229,
+    788.6456,
+    2172.8008,
+    1489.5220,
+    883.1777
+  ]
+  data_std: [
+      1560.9802,
+      1540.3963,
+      1490.3253,
+      1327.4828,
+      906.7046,
+      672.1715
+  ]
