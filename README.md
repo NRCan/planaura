@@ -2,20 +2,27 @@
 # PLANAURA - Canadian Geospatial Foundation Models
 
 # What is Planaura?
-Planaura is a Canadian geospatial foundation model. 
 
-The model is trained with satellite imagery from two sources of harmonized landsat and sentinel (HLS) (https://hls.gsfc.nasa.gov/) 
+Planaura is a collection of Canadian geospatial foundation models produced at Canada Centre for Mapping and Earth Observation at Natural Resources Canada. 
+
+Planaura is trained with satellite imagery mainly from two sources of harmonized landsat and sentinel (HLS) (https://hls.gsfc.nasa.gov/) 
 and sentinel-2 (S2) (https://www.esa.int/Applications/Observing_the_Earth/Copernicus/Sentinel-2).
 The training data was selected to provide national coverage over the vast Canadian landscape through 
 10 years from 2015 to 2024. The training datasets were mainly acquired over periods 
 of June to September in each year, hence making Planaura best performing over spring/summer seasons for most of Canada.
 
-Two versions of this model exist, Planaura_HLS is best suited to be used with HLS imagery at resolutions of 30 meters.
-Planaura_S2 is best suited to be used with S2 imagery at resolutions of 10-20 meters. While Planaura_HLS generalizes well on either
+Two versions of Planaura are currently publicly available through HuggingFace.
+
+Planaura_HLS is best suited to be used with HLS imagery at resolutions of 30 meters.
+
+Planaura_S2 is best suited to be used with S2 imagery at resolutions of 10-20 meters. 
+
+While Planaura_HLS generalizes well on either
 of the data sources (S2 or HLS), the Planaura_S2 model was particularly fine-tuned with higher-resolution data, and 
 we have noticed that this specialized model performs slightly better on 10-meter imagery than the 
 Planaura_HLS and is able to extract finer levels of change when used for change detection.
 
+HuggingFace Repo: [To be added]
 
 Inputs to the model: 
    - In bi-temporal mode (num_frames=2): Two satellite images of the same location taken at two different epochs.
@@ -30,7 +37,7 @@ Inputs to the model:
      - band 5: short wave infrared with central wavelength of  2190 nm - B12
        
               
-The model contains a two-epoch (bi-temporal) encoder that facilitates:
+Planaura contains a two-epoch (bi-temporal) encoder that facilitates:
    1. Embedding images into feature maps that will be able to represent the descriptive features of each image and can subsequently be used for other tasks like clustering or classification.
    2. Calculating the intensity of change between two images representing the actual contextual changes and not naively the changes of spectral values.
 
@@ -56,7 +63,7 @@ src folder that is placed somewhere on your device (whether you copied the src o
 To do this, from within the /some_directory folder (in which .toml file and src folder are located),
 run the following command:
 
-    pip install --upgrade --force-reinstall -e .[gpu] -c requirements.txt --extra-index-url https://download.pytorch.org/whl/cu116
+    pip install -e .[gpu] -c requirements.txt --extra-index-url https://download.pytorch.org/whl/cu116
 
 This will  install the planaura package but will NOT copy its source to the environment. So, in this scenario, 
 you won't see a folder planaura in your site-packages. Instead, you will see a dist-info folder which basically 
@@ -76,7 +83,7 @@ Note than you cannot mix methods 1 and 2.
 
 Directly install the package into your environment from git by the command:
 
-    pip install --upgrade --force-reinstall "planaura[gpu] @ git+ssh://git@git.geoproc.geogc.ca/geoml/r_et_d/planaura.git" -c requirements.txt --extra-index-url https://download.pytorch.org/whl/cu116
+    pip install "planaura[gpu] @ git+ssh://git@git.geoproc.geogc.ca/geoml/r_et_d/planaura.git" -c requirements.txt --extra-index-url https://download.pytorch.org/whl/cu116
 
 Like any other package installed with pip, a copy of the source from the git repo (only of the files that are included in the package) 
 will be made directly 
@@ -91,17 +98,22 @@ Inference from Planaura can result in two outputs:
    1. The embeddings: These are high-dimensional feature vectors that summarize your images via the Planaura's encoder.
    2. The change map: Defined as cosine similarity map between any two images.
 
-Two sample scripts are provided to help you perform the inference. 
+Two sample scripts are provided to help you perform the inference tasks. 
 
    - /infer_scripts/infer_photo.py: When working with conventional images, this script should be used for inference.
    - /infer_scripts/infer_geotiff.py: When working with geotifs, this script should be used for inference.
-     - In this case, if the image pairs passed as inputs to the inference have spatial overlap, the outputs can optionally be merged into consistent mosaics where the most persistent change is considered to consolidate the results through the overlapping areas.
+     - In this case, if the image pairs passed as inputs to the inference have spatial overlap, 
+     then the outputs can optionally be merged into consistent mosaics where the most persistent change is considered to consolidate the results through the overlapping areas.
 
 Each of these scripts should be called along with an appropriate configuration file. 
 Two sample configs are provided, one for inference from Planaura_S2 model (planaura_s2_config.yaml) and one for the Planaura_HLS model (planaura_hls_config.yaml). 
 The main differences between the two is the checkpoint paths and the data normalization vectors.
-In the folder /examples, sample HLS imagery is provided along with an appropriate csv file that you can use to perform inference along with planaura_hls_config.yaml. 
-You only need to make sure that the paths in the csv file reflect the placement of examples folder on your device.
+
+In the folder /examples, sample HLS imagery is provided along with an appropriate csv file that you can use to perform an inference demo along with planaura_hls_config.yaml. 
+See the section "Sample usage" of this README for more details. You can run the demo like this:
+
+     python infer_geotiff.py <some_directory>/planaura_hls_config.yaml
+
 
 # Review of the configuration parameters
 
@@ -155,7 +167,8 @@ You only need to make sure that the paths in the csv file reflect the placement 
 
           - upsample_cosine_map (bool): for cosine map generation you have two choices for the "patch_stride" parameter of the model. 
                If "patch_stride" is set to 1: then the cosine map has originally the same spatial resolution as the input images. This however need considerably more calculations. 
-               If "patch_stride" is set to the same value as "patch_size": then the cosine map will have lower resolution; for example a "patch_stride" of 16 means the cosine map will have 16 times lower resolution that the input image. 
+               If "patch_stride" is set to the same value as "patch_size": then the cosine map will have lower resolution; 
+               for example a "patch_stride" of 16 means the cosine map will have 16 times lower resolution that the input image. 
                In this second case, if you choose for "upsample_cosine_map" to be false, then the low-res cosine map will be outputted and it will be kept the same. 
                If you choose for "upsample_cosine_map" to be true, then an upsampling interpolation will happen resulting in the cosine maps to have the same resolution as the images. 
                Recommended option is true!
@@ -189,14 +202,15 @@ You only need to make sure that the paths in the csv file reflect the placement 
 
           - write_as_image (true): set to true if you would like the embeddings to be presented as an image with N bands, where N is decided based on the "embeddings" parameter.
 
-          - embeddings (list of int): can contain any number between 0 to "embed_dim" of the model to specificy the dimensions of feature maps that will be retained in the output.
+          - embeddings (list-int): can contain any number between 0 to "embed_dim" of the model to specificy the dimensions of feature maps that will be retained in the output.
                If not provided, all embeddings will be considered.
                In Planaura, the embed dimension of the encoder is 768. It means if all embeddings are being saved, the feature map will be presented as an image with 768 bands. 
 
      The following parameters are only applicable when inferring from geotiffs:
 
-          - task_list (list): the possible items of the list are "infer" and "mosaic"
-               If "infer" is in the "task_list", then the  inference process will be done, each image (static mode) or pair of images (bi-temporal mode) identified in your csv_inference_file will be forwarded through the model and their inference outputs will be stored.
+          - task_list (list-str): the possible items of the list are "infer" and "mosaic"
+               If "infer" is in the "task_list", then the  inference process will be done, 
+               each image (static mode) or pair of images (bi-temporal mode) identified in your csv_inference_file will be forwarded through the model and their inference outputs will be stored.
                If "mosaic" is in the "task_list", then the results of an inference (either the inference completed by this call if "infer" is in the list too, or done separately if "infer" is not in the list), 
                will be merged into geospatially unified mosaics. 
                These are applicable when inferring from geotiff files.
@@ -204,7 +218,6 @@ You only need to make sure that the paths in the csv file reflect the placement 
                inference results, then Change Persistence rule will be applied when merging the data. The persistence maps will be produced too. If date layers and fmask quality layers
                are in the inference results too, they will also be mosaicked following the same rule. This way, you will be left with a mosaick
                of change map and you will know each pixel of the map comes exactly from which date and you will also know it was chosen among how many observations (aka persistence count).
-
 
           - num_predictions (int): can be 1 or larger. 
                If set to a value larger than 1, then an augmentation at inference in form of shift will happen as many times as the num_predictions.
@@ -233,24 +246,17 @@ You only need to make sure that the paths in the csv file reflect the placement 
 
      - model_params (dict): configurations used to create the model architecture. When using Planaura weights, do not change any of these parameters unless otherwise indicated.
 
-          - Change data_mean and data_std fields if you are training or have trained a model on a new dataset; use the mean and std of the training dataset along each band.
-
-        
           - keep_pos_embedding (bool): the position embeddings are applied to both encoder and reconstruction decoder. 
                Set to true when using Planaura in bi-temporal mode.
                Set to false when using Planaura in static model.
-
-          - loss: "simple"
-               Keep as is.
-
-          - bands: ["B02", "B03", "B04", "B8A", "B11", "B12"]
-               Keep as is.
-
+          
           - img_size (int): Planaura is trained with image sizes of 512x512 pixels. So, keeping this as 512 is best.
                However, if needed, this can be changes to another value divisible by 16. 
                If this is changed from 512, then "keep_pos_embedding" should become false.
           
-          - The followings define the layers architecture and should be kept as is when using Planaura.
+          - The followings define the layers architecture and should be kept as is when using Planaura weights.
+               - loss: "simple"
+               - bands: ["B02", "B03", "B04", "B8A", "B11", "B12"]
                - no_data_float: 0.0001
                - tubelet_size: 1
                - mask_ratio: 0.75
@@ -273,16 +279,22 @@ You only need to make sure that the paths in the csv file reflect the placement 
           - no_data (int): For HLS and S2 imagery invalid pixels are identified by the no-data value of -9999
                If you use Planaura with any other source of imagery, enter their respective no-data value here.
 
-          - data_mean (list): In the sample config files, the mean values of the training datasets with which each Planaura model is trained are provided. They best contribute to normalizing HLS/S2 imagery.
+          - data_mean (list-float): In the sample config files, the mean values of the training datasets with which each Planaura model is trained are provided. 
+               They best contribute to normalizing HLS/S2 imagery.
                If you use Planaura with any other source of imagery, enter their respective means along all their bands here.
           
-          - data_std (list): In the sample config files, the std values of the training datasets with which each Planaura model is trained are provided. They best contribute to normalizing HLS/S2 imagery.
+          - data_std (list-float): In the sample config files, the std values of the training datasets with which each Planaura model is trained are provided. 
+               They best contribute to normalizing HLS/S2 imagery.
                If you use Planaura with any other source of imagery, enter their respective stds along all their bands here.
+          
 
 # Sample usage
+
 Example data is provided in the folder /examples.
 
-Let's say I have found these images of my zone of interest, and my goal is to create a change map showing changes from 2020 to 2023.
+Let's say I have these images of my zone of interest (Jasper area in Alberta, Canada). 
+Jasper experienced an unfortunate wildfire in August 2024. 
+My goal is to create a change map showing changes from 2023 (before the wildfire) to 2024 (immediately after thewildfire). 
 
 Note how for the HLS data I have fmask quality files too. 
 
@@ -504,6 +516,9 @@ to the final mosaic_cosine_map.
 
 
 # References
+
+See [CONTRIBUTORS.md](./CONTRIBUTORS.md) for a full list of authors and contributors.
+
 The Prithvi-100M model was used as the starting point to create and train Planaura,
 to adapt it to Canadian landscape and to make it suitable for bi-epoch multiscale change detection.
 
@@ -558,8 +573,6 @@ Image sources used for training Planaura:
 
      Copernicus Sentinel-2 data
           Data retrieved from the Sentinel Hub
-
-See [CONTRIBUTORS.md](./CONTRIBUTORS.md) for a full list of authors and contributors.
 
 # Citation
 If you use Planaura in your research, please cite this repository:
