@@ -31,9 +31,9 @@ mosaic_params:
 model_params:
   load_params:
     source: "local"
-    checkpoint_path: "./weights/best_reconstruction_ddp_xarrray_s2_full_training_2.pth"
-    repo_id: ""
-    model_name: ""
+    checkpoint_path: "./weights/Planaura-1.0-S2.pth"
+    repo_id: "NRCan/Planaura-1.0"
+    model_name: "Planaura-1.0-S2.pth"
   keep_pos_embedding: true
   backbone: "planaura_reconstruction"
   bands: ["B02", "B03", "B04", "B8A", "B11", "B12"]

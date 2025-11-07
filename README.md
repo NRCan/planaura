@@ -13,16 +13,16 @@ of June to September in each year, hence making Planaura best performing over sp
 
 Two versions of Planaura are currently publicly available through HuggingFace.
 
-Planaura_HLS is best suited to be used with HLS imagery at resolutions of 30 meters.
+- Planaura_HLS is best suited to be used with HLS imagery at resolutions of 30 meters.
 
-Planaura_S2 is best suited to be used with S2 imagery at resolutions of 10-20 meters. 
+- Planaura_S2 is best suited to be used with S2 imagery at resolutions of 10-20 meters. 
 
 While Planaura_HLS generalizes well on either
 of the data sources (S2 or HLS), the Planaura_S2 model was particularly fine-tuned with higher-resolution data, and 
 we have noticed that this specialized model performs slightly better on 10-meter imagery than the 
 Planaura_HLS and is able to extract finer levels of change when used for change detection.
 
-HuggingFace Repo: [To be added]
+HuggingFace Repo: https://huggingface.co/NRCan/Planaura-1.0
 
 Inputs to the model: 
    - In bi-temporal mode (num_frames=2): Two satellite images of the same location taken at two different epochs.
@@ -83,7 +83,7 @@ Note than you cannot mix methods 1 and 2.
 
 Directly install the package into your environment from git by the command:
 
-    pip install "planaura[gpu] @ git+ssh://git@git.geoproc.geogc.ca/geoml/r_et_d/planaura.git" -c requirements.txt --extra-index-url https://download.pytorch.org/whl/cu116
+    pip install "planaura[gpu] @ git+ssh://git@github.com/NRCan/planaura.git" -c requirements.txt --extra-index-url https://download.pytorch.org/whl/cu116
 
 Like any other package installed with pip, a copy of the source from the git repo (only of the files that are included in the package) 
 will be made directly 
@@ -251,8 +251,8 @@ See the section "Sample usage" of this README for more details. You can run the 
                     If set to local, then provide the "checkpoint_path" of the weights on your local device.
                     If set to huggingface, then provide the repo_id and model_name to download the model from huggingface.
               - checkpoint_path (str): full path to the pth file of the model weights on your local device.
-              - repo_id (str): huggingface repo id of the Planaura models
-              - model_name (str): Planaura model name as hosted on huggingface
+              - repo_id (str): huggingface repo id of the Planaura models (i.e. "NRCan/Planaura-1.0")
+              - model_name (str): Planaura model name as hosted on huggingface (i.e. "Planaura-1.0-HLS" or "Planaura-1.0-S2")
 
           - keep_pos_embedding (bool): the position embeddings are applied to both encoder and reconstruction decoder. 
                Set to true when using Planaura in bi-temporal mode.
@@ -597,6 +597,6 @@ If you use Planaura in your research, please cite this repository:
        title = {Planaura - Canadian Geospatial Foundation Models},
        year = {2025},
        publisher = {GitHub},
-       url = {https://huggingface.co/NRCan/planaura}
+       url = {https://huggingface.co/NRCan/Planaura-1.0}
      }
  
