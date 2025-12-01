@@ -1153,7 +1153,10 @@ def planaura_infer_geotiff(config):
     output_feature_maps = config["feature_maps"]["return"]
     write_as_im_feature_maps = config["feature_maps"]["write_as_image"]
     device = 'cuda' if torch.cuda.is_available() and using_gpu else 'cpu'
-    using_autocast_float16 = config["autocast_float16"]
+    if device == 'cpu':
+        using_autocast_float16 = False
+    else:
+        using_autocast_float16 = config["autocast_float16"]
     compression_type = config["tif_compression"]
     saving_reconstructed_images = config["save_reconstructed_images"]
     saving_dates = config["change_map"]["save_dates_layer"]
