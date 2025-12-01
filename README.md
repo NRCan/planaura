@@ -51,6 +51,7 @@ Create a conda environment as follows:
     conda create --name planaura python=3.10.9
     conda activate planaura
     conda install gdal==3.6.2
+    conda remove --force numpy
 
 After this, there are two methods to install this package in your environment. 
 
@@ -85,9 +86,10 @@ Directly install the package into your environment from git by the command:
 
     pip install "planaura[gpu] @ git+ssh://git@github.com/NRCan/planaura.git" -c requirements.txt --extra-index-url https://download.pytorch.org/whl/cu116
 
+<b>Important:</b> requirements.txt must be preliminary downloaded and placed to the folder you will be installing the package from.
+
 Like any other package installed with pip, a copy of the source from the git repo (only of the files that are included in the package) 
-will be made directly 
-into your environment like an actual PyPI package would behave. So, if you go to your environment's site-packages 
+will be made directly into your environment like an actual PyPI package would behave. So, if you go to your environment's site-packages 
 folder, you should see the package "planaura" with both its dist-info and its source being there. 
 So, any time you run a script that imports from planaura, this is the place where it will refer to seek the source code.
 
@@ -109,10 +111,15 @@ Each of these scripts should be called along with an appropriate configuration f
 Two sample configs are provided, one for inference from Planaura_S2 model (planaura_s2_config.yaml) and one for the Planaura_HLS model (planaura_hls_config.yaml). 
 The main differences between the two is the checkpoint paths and the data normalization vectors.
 
-In the folder /examples, sample HLS imagery is provided along with an appropriate csv file that you can use to perform an inference demo along with planaura_hls_config.yaml. 
-See the section "Sample usage" of this README for more details. You can run the demo like this:
+In the folder /examples, sample HLS imagery is provided along with an appropriate csv file that you can use to perform an inference demo along with planaura_hls_config.yaml.
+See the section "Sample usage" of this README for more details. 
+Assuming you have cloned the repo and want to run script from the root folder, the command line would look like this:
 
-     python infer_geotiff.py <some_directory>/planaura_hls_config.yaml
+     python infer_scripts/infer_geotiff.py ../planaura_hls_config.yaml
+
+In a more general case, the command looks like this:
+
+     python <path_to_the_script>/infer_geotiff.py <path_to_the_config>/planaura_hls_config.yaml
 
 
 # Review of the configuration parameters
@@ -121,7 +128,7 @@ See the section "Sample usage" of this README for more details. You can run the 
           However, it can also be used in static model with an image of a single epoch provided to it as input, which means "num_frames" of 1.
           Note that if you choose the static mode, then "keep_pos_embeddings" variable of the "model_params" should be changed to False.
 
-     - csv_inference_file (str): full path of a comma-delimited SCV file containing the images you want to use for inference.
+     - csv_inference_file (str): full path of a comma-delimited CSV file containing the images you want to use for inference.
           The csv file should have "num_frames" columns, named as input_file_x for x in range(num_frames). So, for example, in bi-temporal
           model with num_frames=2, the csv file must contain two columns of input_file_0 and input_file_1.
 
@@ -144,6 +151,7 @@ See the section "Sample usage" of this README for more details. You can run the 
      - use_multi_gpu (bool): if set to true, DataParallel will be applied so you can use multiple GPUs for inference. 
 
      - autocast_float16 (bool): if set to true, then inference will be done in float16.
+          This option is available only for inference using gpu(s).
 
      - use_xarray (bool):  set to True if you want lazy arrays to be used to open your dataset (as opposed to repetitive direct file I/O calls).
           This is only helpful in speeding up the inference if you want to infer from a very large number of small files, otherwise normal file I/O performs similarly well and even faster.
@@ -249,7 +257,7 @@ See the section "Sample usage" of this README for more details. You can run the 
           - load_params (dict): parameters to load the model weights
                - source (str): "local" or "huggingface". 
                     If set to local, then provide the "checkpoint_path" of the weights on your local device.
-                    If set to huggingface, then provide the repo_id and model_name to download the model from huggingface.
+                    If set to huggingface, then provide the repo_id and model_name to download the model from huggingface. <b>NOTE</b>: If you're behind a firewall, this option might not work. In that case, download the weights from our HF repository and use the “local” option.
               - checkpoint_path (str): full path to the pth file of the model weights on your local device.
               - repo_id (str): huggingface repo id of the Planaura models (i.e. "NRCan/Planaura-1.0")
               - model_name (str): Planaura model name as hosted on huggingface (i.e. "Planaura-1.0-HLS" or "Planaura-1.0-S2")
@@ -298,7 +306,10 @@ See the section "Sample usage" of this README for more details. You can run the 
 
 # Sample usage
 
-Example data is provided in the folder /examples.
+Due to the size of the sample images, we placed them on the Google Cloud:
+https://drive.google.com/drive/folders/1QI6CtCN8OSXN7mWpmy1QOIgOY7p3mpz1?usp=sharing
+
+After downloading, move them into the folder /examples. 
 
 Let's say I have these images of my zone of interest (Jasper area in Alberta, Canada). 
 Jasper experienced an unfortunate wildfire in August 2024. 
