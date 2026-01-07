@@ -84,7 +84,7 @@ Note than you cannot mix methods 1 and 2.
 
 Directly install the package into your environment from git by the command:
 
-    pip install "planaura[gpu] @ git+ssh://git@github.com/NRCan/planaura.git" -c requirements.txt --extra-index-url https://download.pytorch.org/whl/cu116
+    pip install "planaura[gpu] @ git+https://github.com/NRCan/planaura.git" -c requirements.txt --extra-index-url https://download.pytorch.org/whl/cu116
 
 <b>Important:</b> requirements.txt must be preliminary downloaded and placed to the folder you will be installing the package from.
 
