@@ -44,6 +44,7 @@ def setup_config():
         "feature_maps":
             {
                 "return": True,
+                "write_as_csv": True,
                 "write_as_image": False,
                 "embeddings": None
             },

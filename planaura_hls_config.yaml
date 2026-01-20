@@ -25,6 +25,7 @@ change_map:
   date_regex: "\\.(\\d{7})T"
 feature_maps:
   return: true
+  write_as_csv: true
   write_as_image: true
   embeddings: [0, 70, 71, 207, 356, 523]
 mosaic_params:

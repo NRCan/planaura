@@ -103,7 +103,7 @@ Inference from Planaura can result in two outputs:
 Two sample scripts are provided to help you perform the inference tasks. 
 
    - /infer_scripts/infer_photo.py: When working with conventional images, this script should be used for inference.
-   - /infer_scripts/infer_geotiff.py: When working with geotifs, this script should be used for inference.
+   - /infer_scripts/infer_geotiff.py: When working with geotiffs, this script should be used for inference.
      - In this case, if the image pairs passed as inputs to the inference have spatial overlap, 
      then the outputs can optionally be merged into consistent mosaics where the most persistent change is considered to consolidate the results through the overlapping areas.
 
@@ -124,7 +124,7 @@ In a more general case, the command looks like this:
 
 # Review of the configuration parameters
 
-     - num_frames (int): Planaura best support bi-temporal mode with images of two epochs provided to it as inputs, whic means "num_frames" of 2.
+     - num_frames (int): Planaura best support bi-temporal mode with images of two epochs provided to it as inputs, which means "num_frames" of 2.
           However, it can also be used in static model with an image of a single epoch provided to it as input, which means "num_frames" of 1.
           Note that if you choose the static mode, then "keep_pos_embeddings" variable of the "model_params" should be changed to False.
 
@@ -204,11 +204,14 @@ In a more general case, the command looks like this:
                
      - feature_maps (dict): a set of parameters to determine if and how embedding products should be generated.
           
-          - return (bool): set to true if you would like the embeddings of the images to be stored. 
-               If true, the embeddings (aka feature maps) will be stored in a csv file where each row corresponds to a pixel of the image and the pixel coordinates along with all the embeddings are provided in the csv file. 
+          - return (bool): set to true if you would like the embeddings of the images to be calculated.  
                The rest of the parameters in this dict are applicable if "return" is true. 
 
-          - write_as_image (true): set to true if you would like the embeddings to be presented as an image with N bands, where N is decided based on the "embeddings" parameter.
+          - write_as_csv (bool):  if set to true, then the embeddings (aka feature maps) will be stored in a csv file 
+               where each row corresponds to a pixel of the image and the pixel coordinates (in case of the geotif inference, the map coordinates) along with all the embeddings are provided in the csv file. 
+               Note that if you infer with patch_strid=1, then the generated CSV files will be very large if your images are large. It is recommended to set this to False in such a case.
+
+          - write_as_image (bool): set to true if you would like the embeddings to be presented as an image with N bands, where N is decided based on the "embeddings" parameter.
 
           - embeddings (list-int): can contain any number between 0 to "embed_dim" of the model to specificy the dimensions of feature maps that will be retained in the output.
                If not provided, all embeddings will be considered.
@@ -393,7 +396,7 @@ adequate to host these temporary tiles.
 The inference will happen in parallel if batch_size > 1 and using multiple GPUs if selected so.
 Then the tiles will merge back using an approach that increases confidence in prediction. 
 
-When this code finishes the "infer" task, for each pair of input_file_0 and input_file_1, a set of before_date, after_date, quality_fmaks, infer_0, infer_1, cosine_map, feature_maps_0, feature_maps_1 tif files as well as
+When this code finishes the "infer" task, for each pair of input_file_0 and input_file_1, a set of before_date, after_date, quality_fmask, infer_0, infer_1, cosine_map, feature_maps_0, feature_maps_1 tif files as well as
 feature_maps_0 and feature_maps_1 csv files will be created.
 
      epoch2024/inference:
