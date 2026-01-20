@@ -102,8 +102,8 @@ Inference from Planaura can result in two outputs:
 
 Two sample scripts are provided to help you perform the inference tasks. 
 
-   - /infer_scripts/infer_photo.py: When working with conventional images, this script should be used for inference.
-   - /infer_scripts/infer_geotiff.py: When working with geotiffs, this script should be used for inference.
+   - infer_photo.py: When working with conventional images, this script should be used for inference.
+   - infer_geotiff.py: When working with geotiffs, this script should be used for inference.
      - In this case, if the image pairs passed as inputs to the inference have spatial overlap, 
      then the outputs can optionally be merged into consistent mosaics where the most persistent change is considered to consolidate the results through the overlapping areas.
 
@@ -115,7 +115,7 @@ In the folder /examples, sample HLS imagery is provided along with an appropriat
 See the section "Sample usage" of this README for more details. 
 Assuming you have cloned the repo and want to run script from the root folder, the command line would look like this:
 
-     python infer_scripts/infer_geotiff.py ../planaura_hls_config.yaml
+     python infer_geotiff.py ../planaura_hls_config.yaml
 
 In a more general case, the command looks like this:
 
@@ -386,7 +386,7 @@ So, in my Config file, the following tags can be set:
 
 Note that "inference" folders may not exist now but the program will create them to place the created results in them.
 Also note that that if results with same names exist already in these folders, then the new run of the program will overwrite them without any notice.
-The rest of the sample config "planaura_hls_config.yaml" can be kept as is for this example and be used to perform inference using script /infer_scripts/infer_geotiff.py.
+The rest of the sample config "planaura_hls_config.yaml" can be kept as is for this example and be used to perform inference using script infer_geotiff.py.
 
 When this scripts runs, first temporary patches will be created by tiling each pair of files. 
 Even if your raster files don't have the same CRS or the sam resolution, or if they have no or partial overlap only, and if they are huge files that don't fit to memory, you don't need to worry because the tiling process will handle all these situations. 
