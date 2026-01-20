@@ -140,7 +140,8 @@ def merge_feat_csv_files(sfr, images_path, offsets_scales_dict, full_save_path, 
                     first = False
 
 
-def write_feature_maps(config, predicted_features, batch_image_names, write_as_im, upsample_feature_map_factor):
+def write_feature_maps(config, predicted_features, batch_image_names,
+                       write_as_im, write_as_csv, upsample_feature_map_factor):
     if predicted_features is not None:
         embeddings = config["feature_maps"]["embeddings"]
         if not embeddings:
@@ -161,18 +162,18 @@ def write_feature_maps(config, predicted_features, batch_image_names, write_as_i
                 csv_name = 'feats_' + str(fr) + '_' + os.path.splitext(os.path.split(batch_image_names[fr][b])[1])[0]
                 A = predicted_features[b, fr, ...]
                 H, W, C = A.shape
+                if write_as_csv:
+                    ys = strt_index + np.arange(H) * patch_stride
+                    xs = strt_index + np.arange(W) * patch_stride
 
-                ys = strt_index + np.arange(H) * patch_stride
-                xs = strt_index + np.arange(W) * patch_stride
+                    Y, X = np.meshgrid(ys, xs, indexing='ij')  # both H x W
 
-                Y, X = np.meshgrid(ys, xs, indexing='ij')  # both H x W
-
-                coords = np.column_stack([X.reshape(-1), Y.reshape(-1)])  # (H*W) x 2, columns: x, y
-                feats = A.reshape(-1, C)  # (H*W) x C
-                data = np.hstack([coords, feats])  # (H*W) x (2+C)
-                columns = ["x", "y"] + [f"f{k}" for k in range(C)]
-                df = pd.DataFrame(data, columns=columns)
-                df.to_csv(os.path.join(save_folder, csv_name + '.csv'), index=False)
+                    coords = np.column_stack([X.reshape(-1), Y.reshape(-1)])  # (H*W) x 2, columns: x, y
+                    feats = A.reshape(-1, C)  # (H*W) x C
+                    data = np.hstack([coords, feats])  # (H*W) x (2+C)
+                    columns = ["x", "y"] + [f"f{k}" for k in range(C)]
+                    df = pd.DataFrame(data, columns=columns)
+                    df.to_csv(os.path.join(save_folder, csv_name + '.csv'), index=False)
                 if write_as_im:
                     A= A[:,:,embeddings]
                     if upsample_feature_map_factor > 0:
@@ -1151,6 +1152,7 @@ def planaura_infer_geotiff(config):
     num_inferences = config["num_predictions"]
     calculating_cosine_similarity = config["change_map"]["return"]
     output_feature_maps = config["feature_maps"]["return"]
+    write_as_csv_feature_maps = config["feature_maps"]["write_as_csv"]
     write_as_im_feature_maps = config["feature_maps"]["write_as_image"]
     device = 'cuda' if torch.cuda.is_available() and using_gpu else 'cpu'
     if device == 'cpu':
@@ -1354,9 +1356,15 @@ def planaura_infer_geotiff(config):
                                                    calculate_cosine_similarity=calculating_cosine_similarity,
                                                    which_before_epochs=cosine_maps[1] if saving_dates else None,
                                                    upsample_cosine_map_factor=upsample_cosine_map_factor)
-                        if output_feature_maps and prediction_shift == 0:
+                        if output_feature_maps:
+                            if prediction_shift == 0:
+                                write_as_csv_feature_maps_this = write_as_csv_feature_maps
+                            else:
+                                write_as_csv_feature_maps_this = False
                             write_feature_maps(config, feat_maps, batch_image_names,
-                                               write_as_im_feature_maps, upsample_cosine_map_factor)
+                                               write_as_im_feature_maps,
+                                               write_as_csv_feature_maps_this,
+                                               upsample_cosine_map_factor)
                     else:
                         print("nothing implemented yet for when model is not is_reconstruction")
 
@@ -1415,9 +1423,10 @@ def planaura_infer_geotiff(config):
                             feat_filename = 'feature_maps_' + sfr + name_attachment_wo_shift + '.csv'
                             save_full_path = os.path.join(config['inference_save_folder_geotiff_frame_' + sfr],
                                                           feat_filename)
-                            merge_feat_csv_files(sfr, images_path, offsets_scales_dict, save_full_path,
-                                                 c_start, r_start,
-                                                 recrop_width, recrop_height)
+                            if write_as_csv_feature_maps:
+                                merge_feat_csv_files(sfr, images_path, offsets_scales_dict, save_full_path,
+                                                     c_start, r_start,
+                                                     recrop_width, recrop_height)
                         if write_as_im_feature_maps:
                             feat_filename = 'feature_maps_' + sfr + name_attachment + '.tif'
                             save_full_path = os.path.join(config['inference_save_folder_geotiff_frame_' + sfr],

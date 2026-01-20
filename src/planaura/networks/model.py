@@ -130,6 +130,13 @@ class PLANAURA(nn.Module):
             cosine_map = None
             which_before = None
             feature_maps = None
+            if self.return_features_config['return']:
+                feature_maps = rearrange(latent_batch_src.float(), 'b (t h w) c -> b t h w c',
+                                         t=self.backbone.encoder.patch_embed.grid_size[0],
+                                         h=self.backbone.encoder.patch_embed.grid_size[1],
+                                         w=self.backbone.encoder.patch_embed.grid_size[2]).contiguous().clone()
+                feature_maps = torch.nan_to_num(feature_maps, nan=-100.0, posinf=-100.0, neginf=-100.0)
+                feature_maps[cosine_nodata_mask.unsqueeze(1).unsqueeze(-1).expand_as(feature_maps)] = -100.0
             if self.return_change_config['return'] and 2 <= rec_img.shape[2] <= 3:
                 latent_batch = rearrange(latent_batch_src.float(), 'b (t h w) c -> b t (h w) c',
                                          t=self.backbone.encoder.patch_embed.grid_size[0],
@@ -167,13 +174,6 @@ class PLANAURA(nn.Module):
                                          w=self.backbone.encoder.patch_embed.grid_size[2])
                 mask = (cosine_map == -100.0)
                 which_before[mask] = -100
-            if self.return_features_config['return']:
-                feature_maps = rearrange(latent_batch_src.float(), 'b (t h w) c -> b t h w c',
-                                         t=self.backbone.encoder.patch_embed.grid_size[0],
-                                         h=self.backbone.encoder.patch_embed.grid_size[1],
-                                         w=self.backbone.encoder.patch_embed.grid_size[2])
-                feature_maps = torch.nan_to_num(feature_maps, nan=-100.0, posinf=-100.0, neginf=-100.0)
-                feature_maps[cosine_nodata_mask.unsqueeze(1).unsqueeze(-1).expand_as(feature_maps)] = -100.0
             return rec_img, (cosine_map, which_before), feature_maps
 
         else:  # perform evaluation-only mode

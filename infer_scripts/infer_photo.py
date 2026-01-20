@@ -27,6 +27,7 @@ def setup_config():
         "feature_maps":
             {
                 "return": True,
+                "write_as_csv": True,
                 "write_as_image": True,
                 "embeddings": None
             },
@@ -76,6 +77,7 @@ def infer_simple(config):
     using_autocast_float16 = config["autocast_float16"]
     calculate_cosine_similarity = config["change_map"]["return"]
     return_feature_maps = config["feature_maps"]["return"]
+    write_as_csv_feature_maps = config["feature_maps"]["write_as_csv"]
     write_as_im_feature_maps = config["feature_maps"]["write_as_image"]
     upsample_cosine_map = config["change_map"]["upsample_cosine_map"]
     patch_stride = config['model_params']['patch_stride'] if 'patch_stride' in config['model_params'] else \
@@ -132,7 +134,8 @@ def infer_simple(config):
                                            which_before_epochs=None,
                                            upsample_cosine_map_factor=upsample_cosine_map_factor)
                 if return_feature_maps:
-                    write_feature_maps(config, feat_maps, batch_image_names, write_as_im_feature_maps,
+                    write_feature_maps(config, feat_maps, batch_image_names,
+                                       write_as_im_feature_maps, write_as_csv_feature_maps,
                                        upsample_feature_map_factor=upsample_cosine_map_factor)
                 del cosine_maps, predicted_img_batch, input_img_batch, feat_maps
             else:
