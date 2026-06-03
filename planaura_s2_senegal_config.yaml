@@ -50,7 +50,7 @@ model_params:
   decoder_num_heads: 16
   mask_ratio: 0.75
   tubelet_size: 1
-  no_data: 0
+  no_data: -9999
   data_mean: [
     836.1105,
     1312.5455,
