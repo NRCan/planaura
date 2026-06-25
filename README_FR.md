@@ -48,7 +48,7 @@ Planaura contient un encodeur bi‑temporel permettant :
 
 Créer un environnement conda:
 
-    conda create --name planaura python=3.10.9 gdal==3.6.2 poppler==24.09.0
+    conda create --name planaura python=3.10.19 gdal=3.6.2 poppler=24.09.0
     conda activate planaura
     conda remove --force numpy
 

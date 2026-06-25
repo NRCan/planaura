@@ -48,7 +48,7 @@ Planaura contains a two-epoch (bi-temporal) encoder that facilitates:
 
 Create a conda environment as follows:
 
-    conda create --name planaura python=3.10.9 gdal==3.6.2 poppler==24.09.0
+    conda create --name planaura python=3.10.19 gdal=3.6.2 poppler=24.09.0
     conda activate planaura
     conda remove --force numpy
 

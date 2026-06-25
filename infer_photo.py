@@ -90,9 +90,6 @@ def infer_simple(config):
         upsample_cosine_map_factor = patch_stride
     if upsample_feature_map and patch_stride > 1:
         upsample_feature_map_factor = patch_stride
-    merge_stride = patch_stride
-    if upsample_cosine_map_factor > 0:
-        merge_stride = 1
 
     for fr in range(config['num_frames']):
         os.makedirs(config['inference_save_folder_frame_' + str(fr)], exist_ok=True)
