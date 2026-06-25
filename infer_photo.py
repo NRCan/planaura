@@ -27,7 +27,8 @@ def setup_config():
         "feature_maps":
             {
                 "return": True,
-                "write_as_csv": True,
+                "write_as_df": True,
+                "upsample_feature_map": False,
                 "write_as_image": True,
                 "embeddings": None
             },
@@ -79,12 +80,19 @@ def infer_simple(config):
     return_feature_maps = config["feature_maps"]["return"]
     write_as_csv_feature_maps = config["feature_maps"]["write_as_csv"]
     write_as_im_feature_maps = config["feature_maps"]["write_as_image"]
+    upsample_feature_map = config["feature_maps"]["upsample_feature_map"]
     upsample_cosine_map = config["change_map"]["upsample_cosine_map"]
     patch_stride = config['model_params']['patch_stride'] if 'patch_stride' in config['model_params'] else \
         config['model_params']['patch_size']
     upsample_cosine_map_factor = -1.0
+    upsample_feature_map_factor = -1.0
     if upsample_cosine_map and patch_stride > 1:
         upsample_cosine_map_factor = patch_stride
+    if upsample_feature_map and patch_stride > 1:
+        upsample_feature_map_factor = patch_stride
+    merge_stride = patch_stride
+    if upsample_cosine_map_factor > 0:
+        merge_stride = 1
 
     for fr in range(config['num_frames']):
         os.makedirs(config['inference_save_folder_frame_' + str(fr)], exist_ok=True)
@@ -136,7 +144,8 @@ def infer_simple(config):
                 if return_feature_maps:
                     write_feature_maps(config, feat_maps, batch_image_names,
                                        write_as_im_feature_maps, write_as_csv_feature_maps,
-                                       upsample_feature_map_factor=upsample_cosine_map_factor)
+                                       upsample_feature_map_factor=upsample_feature_map_factor,
+                                       upsample_cosine_map_factor=upsample_cosine_map_factor)
                 del cosine_maps, predicted_img_batch, input_img_batch, feat_maps
             else:
                 print("nothing implemented yet for when model is not is_reconstruction")

@@ -21,7 +21,8 @@ change_map:
   date_regex: "\\_(\\d{8})_"
 feature_maps:
   return: true
-  write_as_csv: true
+  write_as_df: true
+  upsample_feature_map: false
   write_as_image: false
   embeddings:
 mosaic_params:
@@ -29,6 +30,8 @@ mosaic_params:
   target_crs: "EPSG:32628"
   target_resolution: 10
   mosaic_save_postfix: "something"
+process_bbox: [231335.169,1626649.055, 239700.191,1634079.802]
+process_bbox_crs: "EPSG:32628"
 model_params:
   load_params:
     source: "local"

@@ -48,9 +48,8 @@ Planaura contient un encodeur bi‑temporel permettant :
 
 Créer un environnement conda:
 
-    conda create --name planaura python=3.10.9
+    conda create --name planaura python=3.10.9 gdal==3.6.2 poppler==24.09.0
     conda activate planaura
-    conda install gdal==3.6.2
     conda remove --force numpy
 
 Maintenant, deux méthodes d’installation existent : 
@@ -193,15 +192,24 @@ Dans un cas plus général, la commande ressemble à ceci :
             
 			- date_regex (literal string): Expression régulière permettant d’extraire la date apartir des noms de fichiers.
 				Pour HLS, le bon regex est "\\.(\\d{7})T" et pour S2 the bon regex est "\\_(\\d{8})_"
+
+            - cluster (dict): 
+               - return (bool): Si True, une catégorisation non-supervisée (clustering) sera faite sur les cartes de changement pour vois aider a mieux interpreter les types de changement.
+               - min_cluster_size (int): En pixels, ca represents la taille minimum des clusters.
+               - max_similarity (float): Ca devrait etre entre -1.0 et 1.0. 
+                    Afin de concentrer la catégorisation sur les pixels changés de facon importante, seulement les pixels avec des valeurs de "cosine similarity" moins que cette valuer vont etre considérés.
                
 	 - feature_maps (dict): Paramètres liés à la génération des embeddings / encodages.
           
 			- return (bool): Activer la production des embeddings.  
-               Les autres paramètres de ce dict ne s’appliquent que si return = True..
+                Les autres paramètres de ce dict ne s’appliquent que si return = True..
 
-			- write_as_csv (bool): Exporter tous les embeddings sous format CSV.
-				chaque ligne correspond à un pixel de l'image et les coordonnées du pixel (dans le cas de l'inférence geotif, les coordonnées de la carte) et chaque column corresponds a une dimension de embedding.
-				À noter que si patch_strid=1, le fichier va etre très volumineux.
+			- write_as_df (bool): Exporter tous les embeddings sous format parquet.
+                Dans le cas de infer_photo: chaque ligne du fichier Parquet  correspond à un pixel de l’image, et les coordonnées du pixel ainsi que tous les embeddings sont considérés comme des colonnes.
+                Dans le cas de infer_geotif: chaque pixel est considéré comme un point, et les plongements sont considérés comme ses attributs. L’ensemble est stocké dans un fichier GeoParquet.
+
+            - upsample_feature_map (bool): Si True, les embeddings qui sont enregistrés sour forme df seront upsampler pour arriver à stride de 1 si le patch_stride n'est pas explicitement 1.
+                Sachez que configuer cette option a true (ou configurer « patch_stride » a 1) créera des fichiers assez volumineux pour stocker toutes les embeddings sous format (geo)parquet.
 
 			- write_as_image (bool): Exporter les embeddings sous format d'un image multi-bande.
 
@@ -224,7 +232,7 @@ Dans un cas plus général, la commande ressemble à ceci :
 				De toute facon, un chevauchement de 50 % est toujours appliqué aux patchs.
 
 			- concatenate_char (str): Caractère utilisé pour concaténer les noms d’entrées afin de générer des noms de fichiers uniques.
-				La convention de nommage des fichiers de sortie consiste à concaténer les noms de chaque image d'entrée à l'aide du caractère « concatenate_char ».
+                La convention de nommage des fichiers de sortie consiste à concaténer les noms de chaque image d'entrée à l'aide du caractère « concatenate_char ».
 				Par exemple, si concatenate_char="!", et que votre première image est « HLS.S30.T13VED.2024001T180919.v2.0.tif » et votre seconde image « HLS.S30.T13VED.2025001T180919.v2.0 »,
 				alors toutes les sortie seront nommées comme « <OUTPUT>!HLS.S30.T13VED.2024001T180919.v2.0!HLS.S30.T13VED.2025001T180919.v2.0 », où OUTPUT est le nom du produit désigné ; 
 				par exemple, les cartes d'intensité de changement sont exportées sous le nom « cosine_map ».
@@ -240,6 +248,13 @@ Dans un cas plus général, la commande ressemble à ceci :
 				- target_resolution (float) : la résolution dans laquelle vous souhaitez que les mosaïques soient créées, définie dans les unités de « target_crs ».
 			   
 				- mosaic_save_postfix (str) : suffixe ajouté aux fichiers mosaïqués
+    
+          - process_bbox (list): optional, Si vous souhaitez traiter uniquement une région des données, indiquez une boîte englobante (bbox) de coordonnées géographiques.
+                Le format attendu est [minx, miny, maxx, maxy].
+
+          - process_bbox_crs (str): optional, Si vous indiquez « process_bbox », vous pouvez spécifier le système de coordonnées de référence (SCR) en fournissant une chaîne EPSG, par exemple « EPSG:XXXX ».
+				Vous pouvez également omettre cet argument ; dans ce cas, le SCR des images sera considéré comme identique à celui de la première image d'entrée.
+
 
 	- model_params (dict):  les paramètres de l’architecture du modèle. Ne pas modifier lors de l’usage des poids officiels, sauf indication contraire.
 

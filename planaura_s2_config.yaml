@@ -21,7 +21,8 @@ change_map:
   date_regex: "\\_(\\d{8})_"
 feature_maps:
   return: true
-  write_as_csv: true
+  write_as_df: true
+  upsample_feature_map: false
   write_as_image: false
   embeddings:
 mosaic_params:
