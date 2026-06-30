@@ -48,9 +48,8 @@ Planaura contains a two-epoch (bi-temporal) encoder that facilitates:
 
 Create a conda environment as follows:
 
-    conda create --name planaura python=3.10.9
+    conda create --name planaura python=3.10.19 gdal=3.6.2 poppler=24.09.0
     conda activate planaura
-    conda install gdal==3.6.2
     conda remove --force numpy
 
 After this, there are two methods to install this package in your environment. 
@@ -64,7 +63,7 @@ src folder that is placed somewhere on your device (whether you copied the src o
 To do this, from within the /some_directory folder (in which .toml file and src folder are located),
 run the following command:
 
-    pip install -e .[gpu] -c requirements.txt --extra-index-url https://download.pytorch.org/whl/cu116
+    pip install -e ".[gpu]" -c requirements.txt --extra-index-url https://download.pytorch.org/whl/cu116
 
 This will  install the planaura package but will NOT copy its source to the environment. So, in this scenario, 
 you won't see a folder planaura in your site-packages. Instead, you will see a dist-info folder which basically 
@@ -201,15 +200,18 @@ In a more general case, the command looks like this:
             
           - date_regex (literal string): This is the regex representation of how we should find the "date" in the input image names.
                For HLS, the proper regex is "\\.(\\d{7})T" and for S2 the proper regex is "\\_(\\d{8})_"
-               
+
      - feature_maps (dict): a set of parameters to determine if and how embedding products should be generated.
           
           - return (bool): set to true if you would like the embeddings of the images to be calculated.  
                The rest of the parameters in this dict are applicable if "return" is true. 
 
-          - write_as_csv (bool):  if set to true, then the embeddings (aka feature maps) will be stored in a csv file 
-               where each row corresponds to a pixel of the image and the pixel coordinates (in case of the geotif inference, the map coordinates) along with all the embeddings are provided in the csv file. 
-               Note that if you infer with patch_strid=1, then the generated CSV files will be very large if your images are large. It is recommended to set this to False in such a case.
+          - write_as_df (bool):  if set to true, then the embeddings (aka feature maps) will be stored in a (geo) parquet file as a dataframe.
+               In the case of infer_photo:  each row in the stored parquet file corresponds to a pixel of the image and the pixel coordinates along with all the embeddings are considered as columns.
+               In the case of infer_geotif: each pixel is considered as a point and the embeddings are considered as their attributes, and they are all stored in a geoparquet file.
+
+          - upsample_feature_map (bool): if set to true, then the embeddings stored as df will be upsampled to reach a stride of 1 if the patch_stride is not explicitly 1.
+               Be aware that setting this option to true (or setting "patch_stride" to 1) will create quite large files to store all the embeddings with (geo)parquet format.
 
           - write_as_image (bool): set to true if you would like the embeddings to be presented as an image with N bands, where N is decided based on the "embeddings" parameter.
 
@@ -254,6 +256,12 @@ In a more general case, the command looks like this:
                - target_resolution (float): the resolution in which you would like the mosaics to be created, defined in the units of "target_crs".
      
                - mosaic_save_postfix (str): a postfix to be used for the generated mosaics names.
+
+          - process_bbox (list): optional, if you want only a region of the data be processed (as opposed to all possible areas), then pass a bbox of geo coordinates.
+               The expected format is [minx, miny, maxx, maxy].
+
+          - process_bbox_crs (str): optional, if you pass a "process_bbox", then you can identify what CRS it is expressed in by passing an EPSG string, as in "EPSG:XXXX". 
+               You can also not include this argument, in which case we will assume the CRS of the images is the same as the CRS of the first-frame input image.
 
      - model_params (dict): configurations used to create the model architecture. When using Planaura weights, do not change any of these parameters unless otherwise indicated.
 
@@ -505,9 +513,12 @@ mosaic_before_input and mosaic_after_input will show the multi-spectral values o
 The persistent fmask, named as "mosaic_quality_fmask_example_c.tif":
 
 mosaic_quality_fmask mosaic would be produced to show the worst status of clouds or other artifacts (according to the HLS quality mask)
-for each pixel (e.g. if there is cloud on either before_input or before_output, the final mosaic_quality_fmsak will show cloud). In this file, the no-data value is 255.
+for each pixel (e.g. if there is cloud on either before_input or before_output, the final mosaic_quality_fmsak will show cloud). 
+
+In this file, the no-data value is 255.
 The value 0 means clean, 1 means cloud, 2 means cloud-adjacent,
 3 means shadow, 4 means ice/snow and 6 means high-aerosol. 
+
 This way you can cross-validate whether significant changes might be caused by presence of cloud or other fmask artifacts.
 
      change persistence fmask quality map overlaid on openstreet map:

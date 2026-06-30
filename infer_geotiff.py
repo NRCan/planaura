@@ -32,6 +32,8 @@ def setup_config():
         "ignore_prefixes": None,
         "num_frames": 2,
         "tif_compression": "NONE",
+        "process_bbox": None,
+        "process_bbox_crs": None,
         "change_map":
             {
                 "return": True,
@@ -44,7 +46,8 @@ def setup_config():
         "feature_maps":
             {
                 "return": True,
-                "write_as_csv": True,
+                "write_as_df": True,
+                "upsample_feature_map": False,
                 "write_as_image": False,
                 "embeddings": None
             },

@@ -11,7 +11,7 @@ batch_size: 4
 data_loader_num_workers: 1
 autocast_float16: true
 num_frames: 2
-save_reconstructed_images: true
+save_reconstructed_images: false
 minimum_valid_percentage: 0.7
 concatenate_char: "!"
 num_predictions: 1
@@ -25,7 +25,8 @@ change_map:
   date_regex: "\\.(\\d{7})T"
 feature_maps:
   return: true
-  write_as_csv: true
+  write_as_df: true
+  upsample_feature_map: false
   write_as_image: true
   embeddings: [0, 70, 71, 207, 356, 523]
 mosaic_params:

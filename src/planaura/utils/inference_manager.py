@@ -8,17 +8,23 @@ from planaura.utils.raster_management.tiling_geotiff import tile_geotiffs
 from planaura.utils.raster_management.write_geotiff import write_geotiff
 from planaura.utils.raster_management.merge_geotiff import merge_geotiffs
 from planaura.utils.data.sample_normalizer import SampleImageUnNormalizer
+import torch
 import gc
 import re
 import glob
 import os
-import torch
 import shutil
 import rasterio
 import copy
 import time
 import numpy as np
 import pandas as pd
+import geopandas as gpd
+import pyproj
+import shapely
+from geopandas.io.arrow import _geopandas_to_arrow
+import pyarrow.parquet as pq
+import pyarrow as pa
 import torch.nn.functional as Func
 from datetime import datetime, timedelta
 from torchvision import transforms
@@ -106,42 +112,69 @@ def transform_xy_csv_with_dict(offsets_scales_dict, x, y, fp_wo):
     return M[2] * x + M[0], M[3] * y + M[1]
 
 
-def merge_feat_csv_files(sfr, images_path, offsets_scales_dict, full_save_path, x_start, y_start, x_len, y_len):
+def merge_feat_csv_files(sfr, images_path, offsets_scales_dict, full_save_path, x_start, y_start, x_len, y_len, crs_string):
     files_wo_extension = [
         os.path.splitext(f)[0]
         for f in os.listdir(images_path)
-        if f.startswith('feats_' + sfr) and f.endswith(".csv")
+        if f.startswith('feats_' + sfr) and f.endswith(".parquet")
     ]
-    first = True
+    writer = None
+    expected_schema = None
     x_col = 'x'
     y_col = 'y'
-    with open(full_save_path, "w", newline="") as out_f:
-        for fp_wo in files_wo_extension:
-            for chunk in pd.read_csv(os.path.join(images_path, fp_wo + '.csv'), chunksize=262144):
-                if x_col not in chunk.columns or y_col not in chunk.columns:
-                    continue
-                mask = pd.Series(True, index=chunk.index)
-                mask &= chunk[x_col].between(x_start, x_start+x_len-1, inclusive='both')
-                mask &= chunk[y_col].between(y_start, y_start+y_len-1, inclusive='both')
-                if not mask.any():
-                    continue
-                chunk = chunk.loc[mask]
-                x_new, y_new = transform_xy_csv_with_dict(offsets_scales_dict, chunk[x_col], chunk[y_col], fp_wo)
-                chunk[x_col] = x_new
-                chunk[y_col] = y_new
+    precision = 0.001
+    if pyproj.CRS(crs_string).is_geographic:
+        precision = 1e-8
+    print(f"Truncated precision in geoparquet geometries uses a grid_size of {precision}")
+    for fp_wo in files_wo_extension:
+        parquet_path = os.path.join(images_path, fp_wo + '.parquet')
+        parquet_file = pq.ParquetFile(parquet_path)
+        for batch in parquet_file.iter_batches(batch_size=262_144):
+            chunk = batch.to_pandas()
+            if x_col not in chunk.columns or y_col not in chunk.columns:
+                continue
 
-                if first:
-                    expected_cols = list(chunk.columns)
-                else:
-                    chunk = chunk.reindex(columns=expected_cols)
+            mask = (chunk[x_col].between(x_start, x_start + x_len - 1, inclusive="both") &
+                    chunk[y_col].between(y_start, y_start + y_len - 1, inclusive="both"))
 
-                chunk.to_csv(out_f, index=False, header=first)
-                if first:
-                    first = False
+            if not mask.any():
+                continue
+            chunk = chunk.loc[mask]
+            chunk = chunk.astype('float32')
+            chunk = chunk.astype('float16')
+            x_new, y_new = transform_xy_csv_with_dict(offsets_scales_dict, chunk[x_col], chunk[y_col], fp_wo)
+            chunk[x_col] = x_new
+            chunk[y_col] = y_new
+
+            gdf_chunk = gpd.GeoDataFrame(
+                chunk.drop(columns=[x_col, y_col]),
+                geometry=gpd.points_from_xy(chunk[x_col], chunk[y_col]),
+                crs=crs_string)
+            gdf_chunk["geometry"] = shapely.set_precision(gdf_chunk["geometry"], grid_size=precision)
+
+            arrow_table = _geopandas_to_arrow(gdf_chunk, index=False, write_covering_bbox=True)
+
+            if expected_schema is None:
+                # expected_schema = pa.Schema.from_pandas(df=chunk, preserve_index=False)
+                expected_schema = arrow_table.schema
+            else:
+                # chunk = chunk.reindex(columns=expected_schema.names)
+                arrow_table = arrow_table.select(expected_schema.names)
+
+            if writer is None:
+                writer = pq.ParquetWriter(
+                    where=full_save_path, schema=expected_schema,
+                    compression="zstd", compression_level=15,
+                    use_byte_stream_split=True)
+            # writer.write_table(pa.Table.from_pandas(df=chunk, schema=expected_schema,preserve_index=False))
+            writer.write_table(arrow_table, row_group_size=100_000)
+
+    if writer is not None:
+        writer.close()
 
 
-def write_feature_maps(config, predicted_features, batch_image_names,
-                       write_as_im, write_as_csv, upsample_feature_map_factor):
+def write_feature_maps(config, predicted_features, batch_image_names, write_as_im, write_as_csv,
+                       upsample_feature_map_factor, upsample_cosine_map_factor):
     if predicted_features is not None:
         embeddings = config["feature_maps"]["embeddings"]
         if not embeddings:
@@ -154,30 +187,39 @@ def write_feature_maps(config, predicted_features, batch_image_names,
             strt_index = int(patch_size / 2 - 1)
         else:
             strt_index = 0
-
+        merge_stride = patch_stride
+        if upsample_feature_map_factor > 0:
+            merge_stride = 1
         num_frames = predicted_features.shape[1]
         for fr in range(num_frames):
             save_folder = config['inference_save_folder_frame_' + str(fr)]
             for b in range(predicted_features.shape[0]):
                 csv_name = 'feats_' + str(fr) + '_' + os.path.splitext(os.path.split(batch_image_names[fr][b])[1])[0]
-                A = predicted_features[b, fr, ...]
-                H, W, C = A.shape
+                A_f = predicted_features[b, fr, ...]
+                if upsample_feature_map_factor > 0:
+                    A_f = resample_cosines_features(A_f, upsample_feature_map_factor, clip=False)
+                H, W, C = A_f.shape
                 if write_as_csv:
-                    ys = strt_index + np.arange(H) * patch_stride
-                    xs = strt_index + np.arange(W) * patch_stride
+                    ys = strt_index + np.arange(H) * merge_stride
+                    xs = strt_index + np.arange(W) * merge_stride
 
                     Y, X = np.meshgrid(ys, xs, indexing='ij')  # both H x W
 
-                    coords = np.column_stack([X.reshape(-1), Y.reshape(-1)])  # (H*W) x 2, columns: x, y
-                    feats = A.reshape(-1, C)  # (H*W) x C
+                    coords = np.column_stack([X.reshape(-1), Y.reshape(-1)]).astype(np.float16)  # (H*W) x 2, columns: x, y
+                    feats = A_f.reshape(-1, C).astype(np.float16)  # (H*W) x C
                     data = np.hstack([coords, feats])  # (H*W) x (2+C)
                     columns = ["x", "y"] + [f"f{k}" for k in range(C)]
+                    target_schema = pa.schema([(col, pa.float16()) for col in columns])
                     df = pd.DataFrame(data, columns=columns)
-                    df.to_csv(os.path.join(save_folder, csv_name + '.csv'), index=False)
+                    df.to_parquet(os.path.join(save_folder, csv_name + '.parquet'),
+                                  schema=target_schema,
+                                  engine="pyarrow", compression="snappy",
+                                  index=False, row_group_size=100_000)
                 if write_as_im:
-                    A= A[:,:,embeddings]
-                    if upsample_feature_map_factor > 0:
-                        A = resample_cosines_features(A, upsample_feature_map_factor, clip=False)
+                    A = predicted_features[b, fr, ...]
+                    A = A[:, :, embeddings]
+                    if upsample_cosine_map_factor > 0:
+                        A = resample_cosines_features(A, upsample_cosine_map_factor, clip=False)
                     write_geotiff('unknown', None, '', A, save_folder,
                                   csv_name, alpha_im=None,
                                   data_type=gdal.GDT_Float32, save_tfw=False,
@@ -409,7 +451,7 @@ def remove_all_file_versions(tif_file):
     base_name = os.path.splitext(tif_file)[0]
     matching_files = glob.glob(base_name + ".*")
     for f in matching_files:
-        if not f.lower().endswith('.csv'):
+        if not (f.lower().endswith('.csv') or f.lower().endswith('.parquet') or f.lower().endswith('.geoparquet')):
             try:
                 os.unlink(f)
             except FileNotFoundError:
@@ -1040,7 +1082,7 @@ def planaura_mosaic_geotiff(config, reference_prefix=None, ignore_prefixes=None)
                                 dst_transform=window_transform(window, target_transform),
                                 dst_crs=target_crs,
                                 resampling=resampling_method,
-                                src_nodata=arr_default,
+                                src_nodata=src.nodata,
                                 dst_nodata=arr_default
                             )
                             output_mosaic[mask] = src_data[mask]
@@ -1072,7 +1114,7 @@ def planaura_mosaic_geotiff(config, reference_prefix=None, ignore_prefixes=None)
                                                     dst_transform=window_transform(window, target_transform),
                                                     dst_crs=target_crs,
                                                     resampling=WarpResampling.cubic,
-                                                    src_nodata=arr_default,
+                                                    src_nodata=src_img.nodata,
                                                     dst_nodata=arr_default
                                                 )
                                             output_mosaic_input[:, matching_pixels] = src_image_data[:, matching_pixels]
@@ -1087,7 +1129,7 @@ def planaura_mosaic_geotiff(config, reference_prefix=None, ignore_prefixes=None)
                                     dst_transform=window_transform(window, target_transform),
                                     dst_crs=target_crs,
                                     resampling=resampling_method,
-                                    src_nodata=arr_default,
+                                    src_nodata=src.nodata,
                                     dst_nodata=arr_default
                                 )
                             output_mosaic[:, mask] = src_data[:, mask]
@@ -1149,11 +1191,15 @@ def planaura_infer_geotiff(config):
     if using_multi_gpu and not torch.cuda.is_available():
         using_multi_gpu = False
     config["use_xarray"] = False
+    num_frames = config['num_frames']
     num_inferences = config["num_predictions"]
     calculating_cosine_similarity = config["change_map"]["return"]
+    if num_frames < 2:
+        calculating_cosine_similarity = False
     output_feature_maps = config["feature_maps"]["return"]
-    write_as_csv_feature_maps = config["feature_maps"]["write_as_csv"]
+    write_as_csv_feature_maps = config["feature_maps"]["write_as_df"]
     write_as_im_feature_maps = config["feature_maps"]["write_as_image"]
+    upsample_feature_map = config["feature_maps"]["upsample_feature_map"]
     device = 'cuda' if torch.cuda.is_available() and using_gpu else 'cpu'
     if device == 'cpu':
         using_autocast_float16 = False
@@ -1168,6 +1214,9 @@ def planaura_infer_geotiff(config):
     if saving_fmask:
         saving_dates = True
     concatenate_char = config["concatenate_char"]
+
+    process_bbox = config["process_bbox"]
+    process_bbox_crs = config["process_bbox_crs"]
 
     model = fetch_model(config)
     if using_gpu:
@@ -1184,15 +1233,18 @@ def planaura_infer_geotiff(config):
         config['model_params']['patch_size']
     upsample_cosine_map = config["change_map"]["upsample_cosine_map"]
     upsample_cosine_map_factor = -1.0
+    upsample_feature_map_factor = -1.0
     if upsample_cosine_map and patch_stride > 1:
         upsample_cosine_map_factor = patch_stride
+    if upsample_feature_map and patch_stride > 1:
+        upsample_feature_map_factor = patch_stride
     merge_stride = patch_stride
     if upsample_cosine_map_factor > 0:
         merge_stride = 1
     print(f"merge_stride: {merge_stride}")
     print(f"upsample_cosine_map_factor: {upsample_cosine_map_factor}")
+    print(f"upsample_feature_map_factor: {upsample_feature_map_factor}")
     patch_size = config['model_params']['patch_size']
-    num_frames = config['num_frames']
     crop_size_width_base = config['model_params']['img_size']
     crop_size_height_base = config['model_params']['img_size']
     crop_overlap_percentages = [50]
@@ -1241,7 +1293,7 @@ def planaura_infer_geotiff(config):
                 image_names_input[fr].append(os.path.split(geotiff_database_infer_index['input_file_' + sfr])[1])
                 tiles_dir_input.append(input_folder)
 
-            success_tile = tile_geotiffs(num_frames, random_choice_prob, cut_data_portion, resolution_threshold,
+            success_tile, data_epsgs = tile_geotiffs(num_frames, random_choice_prob, cut_data_portion, resolution_threshold,
                                          discard_beyond_three_bands,
                                          replace_unknown_nodata_zero, save_tfw, INPUT_TARGET, single_image, crop_size_width_base,
                                          crop_size_height_base,
@@ -1251,11 +1303,14 @@ def planaura_infer_geotiff(config):
                                          images_path_input=images_path_input,
                                          images_path_target=images_path_target, image_names_input=image_names_input,
                                          image_names_target=image_names_target, ensure_all_image=True,
-                                         start_point_shift=prediction_shift)
+                                         start_point_shift=prediction_shift,
+                                         bbox=process_bbox, bbox_crs=process_bbox_crs)
             if not success_tile:
+                print(f"No overlapping patches were found at dataset index {index} with prediction shift {prediction_shift}!")
                 continue
             if os.path.exists(config['csv_inference_file']):
                 os.unlink(config['csv_inference_file'])
+            tiles_epsg = data_epsgs[0]
 
             out_folders = []
             column_name = {}
@@ -1291,10 +1346,11 @@ def planaura_infer_geotiff(config):
                                                                                                                y_org_feat,
                                                                                                                x_res_feat,
                                                                                                                y_res_feat]
-                                if write_as_im_feature_maps:
-                                    file_name_feat = 'feats_' + str(fr) + '_' + filename
-                                    with open(os.path.join(output_folder, file_name_feat), 'w') as file:
-                                        file.writelines(geot)
+                            if output_feature_maps and write_as_im_feature_maps:
+                                file_name_feat = 'feats_' + str(fr) + '_' + filename
+                                with open(os.path.join(output_folder, file_name_feat), 'w') as file:
+                                    file.writelines(geot)
+
                             if calculating_cosine_similarity:
                                 file_name_cosine = 'cosines_' + filename
                                 if saving_dates:
@@ -1364,6 +1420,7 @@ def planaura_infer_geotiff(config):
                             write_feature_maps(config, feat_maps, batch_image_names,
                                                write_as_im_feature_maps,
                                                write_as_csv_feature_maps_this,
+                                               upsample_feature_map_factor,
                                                upsample_cosine_map_factor)
                     else:
                         print("nothing implemented yet for when model is not is_reconstruction")
@@ -1420,13 +1477,13 @@ def planaura_infer_geotiff(config):
 
                     if output_feature_maps:
                         if prediction_shift == 0:
-                            feat_filename = 'feature_maps_' + sfr + name_attachment_wo_shift + '.csv'
+                            feat_filename = 'feature_maps_' + sfr + name_attachment_wo_shift + '.geoparquet'
                             save_full_path = os.path.join(config['inference_save_folder_geotiff_frame_' + sfr],
                                                           feat_filename)
                             if write_as_csv_feature_maps:
                                 merge_feat_csv_files(sfr, images_path, offsets_scales_dict, save_full_path,
                                                      c_start, r_start,
-                                                     recrop_width, recrop_height)
+                                                     recrop_width, recrop_height, tiles_epsg)
                         if write_as_im_feature_maps:
                             feat_filename = 'feature_maps_' + sfr + name_attachment + '.tif'
                             save_full_path = os.path.join(config['inference_save_folder_geotiff_frame_' + sfr],

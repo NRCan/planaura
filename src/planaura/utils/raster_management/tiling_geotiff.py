@@ -11,17 +11,31 @@ from osgeo import gdal, osr
 from rasterio.windows import Window
 from rasterio.windows import transform as window_transform
 from rasterio.warp import reproject, Resampling as WarpResampling
+from rasterio.warp import transform_bounds
 
 
 # set the steps along rows and columns
-def set_rows_columns_steps(middle_percentage, height_im, width_im, crop_size_height, crop_size_width,
-                           crop_overlap_percentage, ensure_all_image=False, start_point_shift=0):
+def set_rows_columns_steps(raster_path, middle_percentage, height_im, width_im, crop_size_height, crop_size_width,
+                           crop_overlap_percentage, ensure_all_image=False, start_point_shift=0, bbox=None, bbox_crs=None):
     crop_overlap_width = int(crop_overlap_percentage / 100.0 * crop_size_width)
     crop_overlap_height = int(crop_overlap_percentage / 100.0 * crop_size_height)
 
+    row_min = 0
+    col_min = 0
+    if bbox is not None:
+        middle_percentage = 100
+        minx, miny, maxx, maxy = bbox
+        with rasterio.open(raster_path) as ds:
+            raster_crs = ds.crs
+            if bbox_crs is not None:
+                if str(raster_crs) != bbox_crs:
+                    minx, miny, maxx, maxy = transform_bounds(bbox_crs, raster_crs, minx, miny, maxx, maxy)
+            row_min, col_min = ds.index(minx, maxy)
+            height_im, width_im = ds.index(maxx, miny)
+
     if middle_percentage == 100:
-        along_row = list(range(start_point_shift, height_im + 1 - crop_size_height, crop_size_height - crop_overlap_height))
-        along_col = list(range(start_point_shift, width_im + 1 - crop_size_width, crop_size_width - crop_overlap_width))
+        along_row = list(range(start_point_shift + row_min, height_im + 1 - crop_size_height, crop_size_height - crop_overlap_height))
+        along_col = list(range(start_point_shift + col_min, width_im + 1 - crop_size_width, crop_size_width - crop_overlap_width))
         if ensure_all_image and along_row and along_col:
             if along_col[-1] + crop_size_width < width_im:
                 along_col.append(width_im - crop_size_width)
@@ -244,7 +258,9 @@ def tile_geotiffs(num_frames: int, random_choice_prob, cut_data_portion, resolut
                   crop_overlap_percentages=None, down_size_factors=None, middle_percentages=None,
                   tiles_dir_input=None, tiles_dir_target=None, images_path_input=None, images_path_target=None,
                   image_names_input=None, image_names_target=None,
-                  ensure_all_image=False, start_point_shift=0):
+                  ensure_all_image=False, start_point_shift=0, bbox=None, bbox_crs=None):
+    # The cropping bounding box in form of (minx, miny, maxx, maxy), in the same CRS as the images if bbox_crs is None
+    # otherwise in the bbox_crs as "EPSG:XXXX".
     if middle_percentages is None:
         middle_percentages = [100]
 
@@ -256,6 +272,7 @@ def tile_geotiffs(num_frames: int, random_choice_prob, cut_data_portion, resolut
 
     along_row_at_least_once = []
     along_col_at_least_once = []
+    epsg_codes = {}
     for dataset_index in range(len(image_names_input[0])):
 
         random_prob = random.uniform(0.0, 1.0)
@@ -335,10 +352,16 @@ def tile_geotiffs(num_frames: int, random_choice_prob, cut_data_portion, resolut
         first_valid_index = 0
         for i in range(2 * num_frames):
             if valid_im[i]:
-                along_row, along_col = set_rows_columns_steps(middle_percentage, height_im[i], width_im[i],
-                                                              crop_size_height, crop_size_width,
-                                                              crop_overlap_percentage, ensure_all_image,
-                                                              start_point_shift)
+                along_row, along_col = set_rows_columns_steps(raster_path=fullpath_im[i],
+                                                              middle_percentage=middle_percentage,
+                                                              height_im=height_im[i],
+                                                              width_im=width_im[i],
+                                                              crop_size_height=crop_size_height,
+                                                              crop_size_width=crop_size_width,
+                                                              crop_overlap_percentage=crop_overlap_percentage,
+                                                              ensure_all_image=ensure_all_image,
+                                                              start_point_shift=start_point_shift,
+                                                              bbox=bbox, bbox_crs=bbox_crs)
                 if along_row and along_col:
                     first_valid_index = i
                     break
@@ -364,6 +387,7 @@ def tile_geotiffs(num_frames: int, random_choice_prob, cut_data_portion, resolut
             target_first_crs = src.crs
             xres, _ = src.res
             target_first_transform = src.transform
+            epsg_codes[dataset_index] = target_first_crs.to_string()
 
         for r_count, r_start_first in enumerate(along_row):
             for c_count, c_start_first in enumerate(along_col):
@@ -427,6 +451,6 @@ def tile_geotiffs(num_frames: int, random_choice_prob, cut_data_portion, resolut
 
 
     if along_col_at_least_once and along_row_at_least_once:
-        return True
+        return True, epsg_codes
     else:
-        return False
+        return False, None
