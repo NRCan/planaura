@@ -415,8 +415,8 @@ Lorsque le programme termine la tâche "infer", un ensemble de fichiers sera cr�
 
 tous sous format TIFF, ainsi que :
 
-	- feature_maps_0.csv
-	- feature_maps_1.csv
+	- feature_maps_0.geoparquet
+	- feature_maps_1.geoparquet
 	
 Donc, on va avoir ca:
 
@@ -476,7 +476,7 @@ Notez également que tous ces fichiers utilisent le CRS de EPSG:3979 et une rés
 
 Enfin, notez que tous ces fichiers se terminent par "_c", indiquant que la carte de similarité cosinus finale a influencé leur création.
 
-Dernière remarque : puisque nous avons sette "mosaic_params->delete_residues" a true, tous les fichiers individuels issus de l’inférence (sauf les fichiers CSV contenant les feature maps) seront supprimés à la fin du processus de mosaïquage.
+Dernière remarque : puisque nous avons sette "mosaic_params->delete_residues" a true, tous les fichiers individuels issus de l’inférence (sauf les fichiers geoparquet contenant les feature maps) seront supprimés à la fin du processus de mosaïquage.
 
      epoch2023/inference:
 ![infer_mosaic.png](assets/infer_mosaic.png)

@@ -405,7 +405,7 @@ The inference will happen in parallel if batch_size > 1 and using multiple GPUs 
 Then the tiles will merge back using an approach that increases confidence in prediction. 
 
 When this code finishes the "infer" task, for each pair of input_file_0 and input_file_1, a set of before_date, after_date, quality_fmask, infer_0, infer_1, cosine_map, feature_maps_0, feature_maps_1 tif files as well as
-feature_maps_0 and feature_maps_1 csv files will be created.
+feature_maps_0 and feature_maps_1 geoparquet files will be created.
 
      epoch2024/inference:
 ![infer0.png](assets/infer0.png)
@@ -457,7 +457,7 @@ Also note that they all have EPSG:3979 as their CRS and 30 meters as their resol
 
 Also note that all these files will end with "_c" in their names to show that the final cosine map influenced their creation.
 
-Finally note that since we had set "mosaic_params->delete_residues" to true, then all previous individual inference results (Except for the feature_maps csv files) will be deleted.
+Finally note that since we had set "mosaic_params->delete_residues" to true, then all previous individual inference results (Except for the feature_maps geoparquet files) will be deleted.
 
      epoch2023/inference:
 ![infer_mosaic.png](assets/infer_mosaic.png)
