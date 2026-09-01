@@ -16,6 +16,7 @@ minimum_valid_percentage: 0.7
 concatenate_char: "!"
 num_predictions: 1
 tif_compression: "LZW"
+conditioned_on: "./examples/conditioned.gpkg"
 change_map:
   return: true
   upsample_cosine_map: true
