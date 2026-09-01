@@ -82,7 +82,8 @@ def setup_config():
             "tubelet_size": 1,
             "no_data": -9999,
             "no_data_float": 0.0001
-        }
+        },
+        "conditioned_on": None
     }
     return default_config
 
