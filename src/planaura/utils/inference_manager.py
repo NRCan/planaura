@@ -276,6 +276,7 @@ def convert_yeardoy_to_string(yeardoy, date_regex):
     year = yeardoy // 1000
     doy = yeardoy % 1000
     # find the (\d{n}) part
+    # TODO: make this part more forgiving
     match = re.search(r'(.*)\(\\d\{(\d+)\}\)(.*)', date_regex)
     if not match:
         raise ValueError(f"Invalid regex pattern {date_regex}")
