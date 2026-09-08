@@ -105,14 +105,14 @@ def infer_geo(config):
             os.makedirs(config['inference_input_folder_geotiff_frame_' + _sfr], exist_ok=True)
 
         config['inference_input_folder_frame_' + _sfr] = os.path.join(
-            config['inference_save_folder_frame_' + _sfr], 'temp_input_inference')
+            config['inference_save_folder_frame_' + _sfr], f'temp_input_inference_{datetime.now().strftime("%H%M%S%f")}')
         os.makedirs(config['inference_input_folder_frame_' + _sfr], exist_ok=True)
 
         config['inference_save_folder_geotiff_frame_' + _sfr] = config['inference_save_folder_frame_' + _sfr]
         os.makedirs(config['inference_save_folder_geotiff_frame_' + _sfr], exist_ok=True)
 
         config['inference_save_folder_frame_' + _sfr] = os.path.join(
-            config['inference_save_folder_frame_' + _sfr], 'temp_save_inference')
+            config['inference_save_folder_frame_' + _sfr], f'temp_save_inference_{datetime.now().strftime("%H%M%S%f")}')
         os.makedirs(config['inference_save_folder_frame_' + _sfr], exist_ok=True)
 
     config["use_xarray"] = False
