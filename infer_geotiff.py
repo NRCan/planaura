@@ -1,12 +1,15 @@
-from planaura.utils.inference_manager import planaura_infer_geotiff, planaura_mosaic_geotiff, determine_mosaicable_files
-from planaura.utils.log_generator import setup_file_logging
 import os
 import sys
 import shutil
 import time
 from datetime import datetime
+import uuid
+
 from hydra import compose, initialize, initialize_config_dir
 from omegaconf import OmegaConf
+
+from planaura.utils.inference_manager import planaura_infer_geotiff, planaura_mosaic_geotiff, determine_mosaicable_files
+from planaura.utils.log_generator import setup_file_logging
 
 
 def setup_config():
@@ -91,7 +94,7 @@ def setup_config():
 def infer_geo(config):
     config['csv_inference_file_geotiffs'] = config['csv_inference_file']
     config['csv_inference_file'] = os.path.join(os.path.split(config['csv_inference_file'])[0],
-                                                     'temp_inference.csv')
+                                                     f'temp_inference_{uuid.uuid4()}.csv')
     num_frames_ = config['num_frames']
     for _fr in range(num_frames_):
         _sfr = str(_fr)
@@ -105,14 +108,14 @@ def infer_geo(config):
             os.makedirs(config['inference_input_folder_geotiff_frame_' + _sfr], exist_ok=True)
 
         config['inference_input_folder_frame_' + _sfr] = os.path.join(
-            config['inference_save_folder_frame_' + _sfr], f'temp_input_inference_{datetime.now().strftime("%H%M%S%f")}')
+            config['inference_save_folder_frame_' + _sfr], f'temp_input_inference_{uuid.uuid4()}')
         os.makedirs(config['inference_input_folder_frame_' + _sfr], exist_ok=True)
 
         config['inference_save_folder_geotiff_frame_' + _sfr] = config['inference_save_folder_frame_' + _sfr]
         os.makedirs(config['inference_save_folder_geotiff_frame_' + _sfr], exist_ok=True)
 
         config['inference_save_folder_frame_' + _sfr] = os.path.join(
-            config['inference_save_folder_frame_' + _sfr], f'temp_save_inference_{datetime.now().strftime("%H%M%S%f")}')
+            config['inference_save_folder_frame_' + _sfr], f'temp_save_inference_{uuid.uuid4()}')
         os.makedirs(config['inference_save_folder_frame_' + _sfr], exist_ok=True)
 
     config["use_xarray"] = False
