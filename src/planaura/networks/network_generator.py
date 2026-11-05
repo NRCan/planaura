@@ -13,6 +13,7 @@ def resample_abs_pos_embed(
         old_size=None,
         num_prefix_tokens=1,
         num_frames_by_tubelet=3,
+        old_num_frames_by_tubelet=None,
         interpolation='bilinear',
         antialias=True):
     # new_size = new_model.backbone.encoder.patch_embed.grid_size
@@ -20,23 +21,45 @@ def resample_abs_pos_embed(
     # sort out sizes, assume square if old size not provided
     num_pos_tokens = posemb.shape[1]
     num_new_tokens = new_size[0] * new_size[1] * new_size[2] + num_prefix_tokens
-    if num_new_tokens == num_pos_tokens and new_size[1] == new_size[2]:
-        return posemb
+
+    if old_num_frames_by_tubelet is None:
+        old_num_frames_by_tubelet = num_frames_by_tubelet
 
     if old_size is None:
-        hw = int(math.sqrt((num_pos_tokens - num_prefix_tokens) / num_frames_by_tubelet))
-        old_size = num_frames_by_tubelet, hw, hw
+        hw_squared = ((num_pos_tokens - num_prefix_tokens) / old_num_frames_by_tubelet)
+        if not hw_squared.is_integer():
+            print("The old size of the pos embeddings could not be retrieved!")
+            return None
+        hw_squared = int(hw_squared)
+        hw = math.isqrt(hw_squared)
+        if hw * hw != hw_squared:
+            print("The old size of the pos embeddings could not be retrieved!")
+            return None
+        old_size = old_num_frames_by_tubelet, hw, hw
+
+    if num_new_tokens == num_pos_tokens and old_size == new_size:
+        return posemb
 
     if num_prefix_tokens:
         posemb_prefix, posemb = posemb[:, :num_prefix_tokens, :], posemb[:, num_prefix_tokens:, :]
     else:
         posemb_prefix, posemb = None, posemb
 
+    if old_size[0] > new_size[0]:
+        posemb = posemb[:, 0:new_size[0]*old_size[1]*old_size[2], :]
+
+    if old_size[0] < new_size[0] and new_size[0] % old_size[0] == 0 :
+        concat_times = new_size[0] // old_size[0]
+        pos_concat = []
+        for i in range(concat_times):
+            pos_concat.append(posemb)
+        posemb = torch.cat(pos_concat, dim=1)
+
     # do the interpolation
     embed_dim = posemb.shape[-1]
     orig_dtype = posemb.dtype
     posemb = posemb.float()  # interpolate needs float32
-    posemb = posemb.reshape(old_size[0], old_size[1], old_size[2], -1).permute(0, 3, 1, 2)
+    posemb = posemb.reshape(new_size[0], old_size[1], old_size[2], -1).permute(0, 3, 1, 2)
     posemb = F.interpolate(posemb, size=[new_size[1], new_size[2]], mode=interpolation, antialias=antialias)
     posemb = posemb.permute(0, 2, 3, 1).reshape(1, -1, embed_dim)
     posemb = posemb.to(orig_dtype)
@@ -120,43 +143,79 @@ def resume_pretrained_network(config):
     load_encoder_only = False if 'resume_encoder_only' not in config['model_params'] else config['model_params']['resume_encoder_only']
     keep_pos_embed = config['model_params']['keep_pos_embedding']
     restore_weights_only = True if 'restore_weights_only' not in config['model_params'] else config['model_params']['restore_weights_only']
+    old_num_frames = None if 'old_num_frames' not in config else config['old_num_frames']
     st, checkpoint_path = load_state_dict(config)
-    st['backbone.encoder.pos_embed_original'] = copy.deepcopy(st['backbone.encoder.pos_embed'])
     if keep_pos_embed:
-        st['backbone.encoder.pos_embed_original'] = resample_abs_pos_embed(
+        if 'backbone.encoder.pos_embed_original' not in st.keys():
+            st['backbone.encoder.pos_embed_original'] = copy.deepcopy(st['backbone.encoder.pos_embed'])
+        new_embeds = resample_abs_pos_embed(
             st['backbone.encoder.pos_embed_original'],
-            model.backbone.encoder.patch_embed.grid_size_original,
-            num_frames_by_tubelet=config['num_frames'])
-        st['backbone.encoder.pos_embed'] = resample_abs_pos_embed(st['backbone.encoder.pos_embed'],
-                                                                  model.backbone.encoder.patch_embed.grid_size,
-                                                                  num_frames_by_tubelet=config['num_frames'])
+            new_size=model.backbone.encoder.patch_embed.grid_size_original,
+            num_frames_by_tubelet=config['num_frames'],
+            old_num_frames_by_tubelet=old_num_frames)
+        if new_embeds is not None:
+            st['backbone.encoder.pos_embed_original'] = new_embeds
+        else:
+            print("encoder.pos_embed_original could not be kept!")
+            del st['backbone.encoder.pos_embed_original']
+        new_embeds = resample_abs_pos_embed(st['backbone.encoder.pos_embed'],
+                                            new_size=model.backbone.encoder.patch_embed.grid_size,
+                                            num_frames_by_tubelet=config['num_frames'],
+                                            old_num_frames_by_tubelet=old_num_frames)
+        if new_embeds is not None:
+            st['backbone.encoder.pos_embed'] = new_embeds
+        else:
+            print("encoder.pos_embed could not be kept!")
+            del st['backbone.encoder.pos_embed']
+
         if 'backbone.decoder_pos_embed' in st.keys():
-            st['backbone.decoder_pos_embed'] = resample_abs_pos_embed(st['backbone.decoder_pos_embed'],
-                                                                      model.backbone.encoder.patch_embed.grid_size_original,
-                                                                      num_frames_by_tubelet=config['num_frames'])
+            new_embeds = resample_abs_pos_embed(st['backbone.decoder_pos_embed'],
+                                                new_size=model.backbone.encoder.patch_embed.grid_size_original,
+                                                num_frames_by_tubelet=config['num_frames'],
+                                                old_num_frames_by_tubelet=old_num_frames)
+            if new_embeds is not None:
+                st['backbone.decoder_pos_embed'] = new_embeds
+            else:
+                print("decoder_pos_embed could not be kept!")
+                del st['backbone.decoder_pos_embed']
+
+
     else:
         # discard fixed pos_embedding weight
+        print("deleting encoder.pos_embed ...")
         del st['backbone.encoder.pos_embed']
         if 'backbone.decoder_pos_embed' in st.keys():
+            print("deleting decoder_pos_embed ...")
             del st['backbone.decoder_pos_embed']
         if 'backbone.encoder.pos_embed_original' in st.keys():
+            print("deleting encoder.pos_embed_original ...")
             del st['backbone.encoder.pos_embed_original']
     in_channels = len(config["model_params"]["bands"])
     in_channels_original = st["backbone.encoder.patch_embed.proj.weight"].shape[1]
     if in_channels != in_channels_original:
+        print("in_channels_original != in_channels; thus ")
+        print("   deleting encoder.patch_embed.proj.weight ...")
         del st["backbone.encoder.patch_embed.proj.weight"]
         if "backbone.decoder_pred.weight" in st.keys():
+            print("   deleting decoder_pred.weight ...")
             del st["backbone.decoder_pred.weight"]
         if "backbone.decoder_pred.bias" in st.keys():
+            print("   deleting decoder_pred.bias ...")
             del st["backbone.decoder_pred.bias"]
     if not load_encoder_only:
-        model.load_state_dict(st, strict=False)
+        result = model.load_state_dict(st, strict=False)
         print(f'All trained model weights were restored.')
     else:
         filtered_state_dict = OrderedDict({k: v for k, v in st.items() if "backbone.encoder" in k})
-        model.load_state_dict(filtered_state_dict, strict=False)
+        result = model.load_state_dict(filtered_state_dict, strict=False)
         filtered_state_dict = None
         print(f'Only trained encoder weights were restored.')
+    print("Missing keys:")
+    for k in result.missing_keys:
+        print("  ", k)
+    print("Unexpected keys:")
+    for k in result.unexpected_keys:
+        print("  ", k)
     st = None
 
     if load_encoder_only or restore_weights_only:
