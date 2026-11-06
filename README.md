@@ -1,3 +1,4 @@
+### La version française de ce fichier est disponible par README_FR.md.
 
 # PLANAURA - Canadian Geospatial Foundation Models
 
