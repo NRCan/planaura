@@ -1307,7 +1307,8 @@ def planaura_infer_geotiff(config):
                                          image_names_target=image_names_target, ensure_all_image=True,
                                          start_point_shift=prediction_shift,
                                          bbox=process_bbox, bbox_crs=process_bbox_crs,
-                                         conditioned_on=conditioned_on)
+                                         conditioned_on=conditioned_on,
+                                         tiling_num_workers=config.get('tiling_num_workers', 4))
             if not success_tile:
                 print(f"No overlapping patches were found at dataset index {index} with prediction shift {prediction_shift}!")
                 continue
