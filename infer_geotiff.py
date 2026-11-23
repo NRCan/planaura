@@ -115,7 +115,6 @@ def _publish_scratch_outputs(source_dir, destination_dir):
 
 @contextmanager
 def inference_scratch(config):
-    """Redirect infer_geo's intermediate files into a unique /tmp directory."""
     scratch_root = config['scratch_dir'] if 'scratch_dir' in config else None
     if not scratch_root or 'infer' not in config.get('task_list', ['infer']):
         yield
