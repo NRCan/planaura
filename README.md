@@ -167,6 +167,12 @@ In a more general case, the command looks like this:
      - tif_compression (str): all inference outputs will be stored as tif files. The type of compression can be identified here.
           Valid options are: 'LZW', 'DEFLATE', 'ZSTD', 'NONE'
 
+     - conditioned_on (str): Path to a vector GeoPackage used to restrict inference to areas containing vector features. Set to None to run inference without this restriction.
+
+     - scratch_dir (str): Path to a temporary directory for storing intermediate files. Particularly useful when a fast scratch disk or RAM disk is available. Set to None to disable the use of a scratch directory.
+
+     - tiling_num_workers (int): Number of parallel workers used to tile the input images. Default is 4.
+
      - change_map (dict): a set of parameters to determine if and how change-related products should be generated.
 
           - return (bool): set to true, if you would like change intensity maps (aka cosine maps) to be produced. 

@@ -161,7 +161,13 @@ Dans un cas plus général, la commande ressemble à ceci :
 
      - tif_compression (str): Compression utilisée pour les sorties en format GeoTIFF.
 			Les options sont : 'LZW', 'DEFLATE', 'ZSTD', 'NONE'
+    
+     - conditioned_on (str) : Chemin vers un GeoPackage vectoriel utilisé pour limiter l'inférence aux zones contenant des entités vectorielles. Définir cette variable sur None pour effectuer l'inférence sans cette restriction.
 
+     - scratch_dir (str) : Chemin vers un répertoire temporaire destiné au stockage des fichiers intermédiaires. Particulièrement utile lorsqu'un disque de travail rapide ou un disque RAM est disponible. Définir cette variable sur None pour désactiver l'utilisation d'un répertoire temporaire dédié.
+
+     - tiling_num_workers (int) : Nombre de processus parallèles utilisés pour découper les images d'entrée en tuiles. La valeur par défaut est 4.
+     
      - change_map (dict): Paramètres liés à la production des cartes de changement.
 
 			- return (bool): Produire ou non les cartes d’intensité de changement (cosine maps). 
