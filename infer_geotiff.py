@@ -88,8 +88,7 @@ def setup_config():
             "no_data": -9999,
             "no_data_float": 0.0001
         },
-        "conditioned_on": None,
-        "scratch_dir": "/tmp"
+        "conditioned_on": None
     }
     return default_config
 
