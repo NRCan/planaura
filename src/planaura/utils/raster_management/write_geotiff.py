@@ -42,7 +42,7 @@ def write_geotiff(bands, geoTransformation, prj_im, im, save_path, save_name_wo_
 
     driver = gdal.GetDriverByName('GTiff')
 
-    grid_data_name = f'grid_data_{save_name_wo_extension}' + id_generator()
+    grid_data_name = os.path.join(save_path, f'grid_data_{save_name_wo_extension}' + id_generator())
 
     if alpha_im is not None:
         grid_data = driver.Create(grid_data_name, im.shape[1], im.shape[0], n_bands + 1, data_type, options=options)

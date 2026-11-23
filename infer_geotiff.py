@@ -1,12 +1,17 @@
-from planaura.utils.inference_manager import planaura_infer_geotiff, planaura_mosaic_geotiff, determine_mosaicable_files
-from planaura.utils.log_generator import setup_file_logging
 import os
 import sys
 import shutil
 import time
 from datetime import datetime
+import uuid
+import tempfile
+from contextlib import contextmanager
+
 from hydra import compose, initialize, initialize_config_dir
 from omegaconf import OmegaConf
+
+from planaura.utils.inference_manager import planaura_infer_geotiff, planaura_mosaic_geotiff, determine_mosaicable_files
+from planaura.utils.log_generator import setup_file_logging
 
 
 def setup_config():
@@ -82,84 +87,149 @@ def setup_config():
             "tubelet_size": 1,
             "no_data": -9999,
             "no_data_float": 0.0001
-        }
+        },
+        "conditioned_on": None
     }
     return default_config
 
 
+def _publish_scratch_outputs(source_dir, destination_dir):
+    """Copy finished outputs back to GPFS under their final names atomically."""
+    if not os.path.isdir(source_dir):
+        return
+    os.makedirs(destination_dir, exist_ok=True)
+    for name in os.listdir(source_dir):
+        source = os.path.join(source_dir, name)
+        if not os.path.isfile(source) or name.lower().endswith('.vrt'):
+            continue
+        destination = os.path.join(destination_dir, name)
+        partial = destination + '.' + uuid.uuid4().hex + '.tmp'
+        try:
+            shutil.copy2(source, partial)
+            os.replace(partial, destination)
+        finally:
+            if os.path.exists(partial):
+                os.remove(partial)
+
+
+@contextmanager
+def inference_scratch(config):
+    scratch_root = config['scratch_dir'] if 'scratch_dir' in config else None
+    if not scratch_root or 'infer' not in config.get('task_list', ['infer']):
+        yield
+        return
+
+    frames = range(config['num_frames'])
+    original_outputs = {
+        fr: config[f'inference_save_folder_frame_{fr}'] for fr in frames
+    }
+    keys = ['csv_inference_file', 'csv_inference_file_geotiffs', '_scratch_workspace',
+            '_scratch_original_output_0']
+    for fr in frames:
+        keys.extend((f'inference_save_folder_frame_{fr}',
+                     f'inference_save_folder_geotiff_frame_{fr}',
+                     f'inference_input_folder_frame_{fr}',
+                     f'inference_input_folder_geotiff_frame_{fr}'))
+    saved = {key: config[key] for key in keys if key in config}
+
+    with tempfile.TemporaryDirectory(prefix='planaura_', dir=scratch_root) as workspace:
+        try:
+            config['_scratch_workspace'] = workspace
+            config['_scratch_original_output_0'] = original_outputs[0]
+            for fr in frames:
+                config[f'inference_save_folder_frame_{fr}'] = os.path.join(workspace, f'frame_{fr}')
+            yield
+            for fr in frames:
+                _publish_scratch_outputs(
+                    config[f'inference_save_folder_geotiff_frame_{fr}'],
+                    original_outputs[fr],
+                )
+        finally:
+            for key in keys:
+                if key in saved:
+                    config[key] = saved[key]
+                else:
+                    config.pop(key, None)
+
+
 def infer_geo(config):
-    config['csv_inference_file_geotiffs'] = config['csv_inference_file']
-    config['csv_inference_file'] = os.path.join(os.path.split(config['csv_inference_file'])[0],
-                                                     'temp_inference.csv')
-    num_frames_ = config['num_frames']
-    for _fr in range(num_frames_):
-        _sfr = str(_fr)
-        if 'inference_input_folder_frame_' + _sfr in config:
-            config['inference_input_folder_geotiff_frame_' + _sfr] = config[
-                'inference_input_folder_frame_' + _sfr]
-        else:
-            config['inference_input_folder_geotiff_frame_' + _sfr] = ''
-
-        if config['inference_input_folder_geotiff_frame_' + _sfr]:
-            os.makedirs(config['inference_input_folder_geotiff_frame_' + _sfr], exist_ok=True)
-
-        config['inference_input_folder_frame_' + _sfr] = os.path.join(
-            config['inference_save_folder_frame_' + _sfr], 'temp_input_inference')
-        os.makedirs(config['inference_input_folder_frame_' + _sfr], exist_ok=True)
-
-        config['inference_save_folder_geotiff_frame_' + _sfr] = config['inference_save_folder_frame_' + _sfr]
-        os.makedirs(config['inference_save_folder_geotiff_frame_' + _sfr], exist_ok=True)
-
-        config['inference_save_folder_frame_' + _sfr] = os.path.join(
-            config['inference_save_folder_frame_' + _sfr], 'temp_save_inference')
-        os.makedirs(config['inference_save_folder_frame_' + _sfr], exist_ok=True)
-
-    config["use_xarray"] = False
-    task_list = config["task_list"]
-    reference_prefix = config["reference_prefix"]
-    ignore_prefixes = config["ignore_prefixes"]
-    concat_char = config["concatenate_char"]
-
-    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    setup_file_logging(os.path.join(config['inference_save_folder_geotiff_frame_0'],
-                                    'log_' + timestamp_str + '.log'))
-    print("----- CONFIGS -----")
-    print(config)
-    if "infer" in task_list:
-        _start_time = time.time()
-        planaura_infer_geotiff(config)
-        print(f"infer time (sec): {time.time() - _start_time}")
-    if "mosaic" in task_list:
+    with inference_scratch(config):
+        config['csv_inference_file_geotiffs'] = config['csv_inference_file']
+        config['csv_inference_file'] = os.path.join(
+            config.get('_scratch_workspace', os.path.dirname(config['csv_inference_file'])),
+            f'temp_inference_{uuid.uuid4()}.csv')
+        num_frames_ = config['num_frames']
         for _fr in range(num_frames_):
             _sfr = str(_fr)
-            try:
-                shutil.rmtree(config['inference_input_folder_frame_' + _sfr])
-                shutil.rmtree(config['inference_save_folder_frame_' + _sfr])
-            except:
-                pass
-        _start_time = time.time()
-        files_found, prefixes_found = determine_mosaicable_files(config)
+            if 'inference_input_folder_frame_' + _sfr in config:
+                config['inference_input_folder_geotiff_frame_' + _sfr] = config[
+                    'inference_input_folder_frame_' + _sfr]
+            else:
+                config['inference_input_folder_geotiff_frame_' + _sfr] = ''
 
-        if files_found:
-            planaura_mosaic_geotiff(config,
-                                    reference_prefix=reference_prefix,
-                                    ignore_prefixes=ignore_prefixes)
-        else:
-            print("We couldn't find any files satisfying the formatting requirements. "
-                  "Ensure your files exist, rename them with the formatting rules as below, and re-run!")
-            print("The followings are allowed naming styles for the files that need merging:")
-            print(f"    cosine_map{concat_char}BEFOREINPUTFILENAME{concat_char}AFTERINPUTFILENAME.tif")
-            print(f"    after_date{concat_char}BEFOREINPUTFILENAME{concat_char}AFTERINPUTFILENAME.tif")
-            print(f"    before_date{concat_char}BEFOREINPUTFILENAME{concat_char}AFTERINPUTFILENAME.tif")
-            print(f"    quality_fmask{concat_char}BEFOREINPUTFILENAME{concat_char}AFTERINPUTFILENAME.tif")
-            print(f"    infer_0{concat_char}BEFOREINPUTFILENAME{concat_char}AFTERINPUTFILENAME.tif")
-            print(f"    infer_1{concat_char}BEFOREINPUTFILENAME{concat_char}AFTERINPUTFILENAME.tif")
-            print(f"    feature_maps_0{concat_char}BEFOREINPUTFILENAME{concat_char}AFTERINPUTFILENAME.tif")
-            print(f"    feature_maps_1{concat_char}BEFOREINPUTFILENAME{concat_char}AFTERINPUTFILENAME.tif")
-            print("Additionally, for your assembled mosaic_before_input and mosaic_after_input files to be creatable, "
-                  "you need to make sure that BEFOREINPUTFILENAME and AFTERINPUTFILENAME filenames "
-                  "do have a matching date_regex as identified in your Configs.")
-        print(f"mosaic time (sec): {time.time() - _start_time}")
+            if config['inference_input_folder_geotiff_frame_' + _sfr]:
+                os.makedirs(config['inference_input_folder_geotiff_frame_' + _sfr], exist_ok=True)
+
+            config['inference_input_folder_frame_' + _sfr] = os.path.join(
+                config['inference_save_folder_frame_' + _sfr], f'temp_input_inference_{uuid.uuid4()}')
+            os.makedirs(config['inference_input_folder_frame_' + _sfr], exist_ok=True)
+
+            config['inference_save_folder_geotiff_frame_' + _sfr] = config['inference_save_folder_frame_' + _sfr]
+            os.makedirs(config['inference_save_folder_geotiff_frame_' + _sfr], exist_ok=True)
+
+            config['inference_save_folder_frame_' + _sfr] = os.path.join(
+                config['inference_save_folder_frame_' + _sfr], f'temp_save_inference_{uuid.uuid4()}')
+            os.makedirs(config['inference_save_folder_frame_' + _sfr], exist_ok=True)
+
+        config["use_xarray"] = False
+        task_list = config["task_list"]
+        reference_prefix = config["reference_prefix"]
+        ignore_prefixes = config["ignore_prefixes"]
+        concat_char = config["concatenate_char"]
+
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if config.get('_scratch_original_output_0'):
+            os.makedirs(config['_scratch_original_output_0'], exist_ok=True)
+        setup_file_logging(os.path.join(
+            config.get('_scratch_original_output_0', config['inference_save_folder_geotiff_frame_0']),
+            'log_' + timestamp_str + '.log'))
+        print("----- CONFIGS -----")
+        print(config)
+        if "infer" in task_list:
+            _start_time = time.time()
+            planaura_infer_geotiff(config)
+            print(f"infer time (sec): {time.time() - _start_time}")
+        if "mosaic" in task_list:
+            for _fr in range(num_frames_):
+                _sfr = str(_fr)
+                try:
+                    shutil.rmtree(config['inference_input_folder_frame_' + _sfr])
+                    shutil.rmtree(config['inference_save_folder_frame_' + _sfr])
+                except:
+                    pass
+            _start_time = time.time()
+            files_found, prefixes_found = determine_mosaicable_files(config)
+
+            if files_found:
+                planaura_mosaic_geotiff(config,
+                                        reference_prefix=reference_prefix,
+                                        ignore_prefixes=ignore_prefixes)
+            else:
+                print("We couldn't find any files satisfying the formatting requirements. "
+                      "Ensure your files exist, rename them with the formatting rules as below, and re-run!")
+                print("The followings are allowed naming styles for the files that need merging:")
+                print(f"    cosine_map{concat_char}BEFOREINPUTFILENAME{concat_char}AFTERINPUTFILENAME.tif")
+                print(f"    after_date{concat_char}BEFOREINPUTFILENAME{concat_char}AFTERINPUTFILENAME.tif")
+                print(f"    before_date{concat_char}BEFOREINPUTFILENAME{concat_char}AFTERINPUTFILENAME.tif")
+                print(f"    quality_fmask{concat_char}BEFOREINPUTFILENAME{concat_char}AFTERINPUTFILENAME.tif")
+                print(f"    infer_0{concat_char}BEFOREINPUTFILENAME{concat_char}AFTERINPUTFILENAME.tif")
+                print(f"    infer_1{concat_char}BEFOREINPUTFILENAME{concat_char}AFTERINPUTFILENAME.tif")
+                print(f"    feature_maps_0{concat_char}BEFOREINPUTFILENAME{concat_char}AFTERINPUTFILENAME.tif")
+                print(f"    feature_maps_1{concat_char}BEFOREINPUTFILENAME{concat_char}AFTERINPUTFILENAME.tif")
+                print("Additionally, for your assembled mosaic_before_input and mosaic_after_input files to be creatable, "
+                      "you need to make sure that BEFOREINPUTFILENAME and AFTERINPUTFILENAME filenames "
+                      "do have a matching date_regex as identified in your Configs.")
+            print(f"mosaic time (sec): {time.time() - _start_time}")
 
 
 if __name__ == "__main__":

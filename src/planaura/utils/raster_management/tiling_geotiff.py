@@ -1,17 +1,72 @@
-from planaura.utils.raster_management.read_geotiff import read_geotiff
-from planaura.utils.raster_management.write_geotiff import write_geotiff
+
 import copy
 import os
-import cv2
+from copy import deepcopy
 import random
+from concurrent.futures import ThreadPoolExecutor
+from itertools import islice, product
+from threading import local
+
+import cv2
 import rasterio
 import numpy as np
-from copy import deepcopy
-from osgeo import gdal, osr
+from osgeo import gdal, osr, ogr
 from rasterio.windows import Window
 from rasterio.windows import transform as window_transform
 from rasterio.warp import reproject, Resampling as WarpResampling
 from rasterio.warp import transform_bounds
+from rasterio.crs import CRS
+
+from planaura.utils.raster_management.read_geotiff import read_geotiff
+from planaura.utils.raster_management.write_geotiff import write_geotiff
+
+
+def get_intersect(bbox: ogr.Geometry, vector_ds: ogr.DataSource) -> bool:
+    """
+    Check if a bounding box intersects with any feature in a vector dataset.
+
+    :param bbox: An OGR Geometry representing the bounding box.
+    :param vector_ds: An OGR DataSource containing vector features.
+    :return: True if there is an intersection, False otherwise.
+    """
+    for layer_index in range(vector_ds.GetLayerCount()):
+        layer = vector_ds.GetLayerByIndex(layer_index)
+        layer.SetSpatialFilter(bbox)
+        layer.ResetReading()
+        feature = layer.GetNextFeature()
+        if feature is not None:
+            return True
+
+    return False
+
+
+def get_vector_patch(geotrans, r_start, c_start, crop_size_height, crop_size_width, transform=None) -> ogr.Geometry:
+    """Build the tile footprint, including possible affine rotation/skew."""
+    ring = ogr.Geometry(ogr.wkbLinearRing)
+    for col, row in (
+        (c_start, r_start),
+        (c_start + crop_size_width, r_start),
+        (c_start + crop_size_width, r_start + crop_size_height),
+        (c_start, r_start + crop_size_height),
+        (c_start, r_start),
+    ):
+        x = geotrans[0] + col * geotrans[1] + row * geotrans[2]
+        y = geotrans[3] + col * geotrans[4] + row * geotrans[5]
+        ring.AddPoint(x, y)
+    bbox = ogr.Geometry(ogr.wkbPolygon)
+    bbox.AddGeometry(ring)
+    if transform is not None:
+        bbox.Transform(transform)
+    return bbox
+
+
+def _float32_tile_if_needed(image, gdal_type, no_data_vals):
+    """Only downcast Float64 inputs; preserve smaller integer and Float32 rasters."""
+    if gdal_type != gdal.GDT_Float64:
+        return image, gdal_type, no_data_vals
+    image = image.astype(np.float32, copy=False)
+    no_data_vals = [None if v is None else float(np.float32(v)) for v in no_data_vals]
+    return image, gdal.GDT_Float32, no_data_vals
 
 
 # set the steps along rows and columns
@@ -145,8 +200,11 @@ def read_write_sub_rasterio(image_fullpath, target_crs, target_transform,
             no_data_vals = no_data_vals[0:3]
 
     with rasterio.open(image_fullpath) as src:
-        dtype = src.dtypes[0]
+        dtype = "float32" if gdal_type == gdal.GDT_Float64 else src.dtypes[0]
         np_dtype = np.dtype(dtype)
+        if gdal_type == gdal.GDT_Float64:
+            gdal_type = gdal.GDT_Float32
+            no_data_vals = [None if v is None else float(np.float32(v)) for v in no_data_vals]
         im_sub = np.ones((num_bands, crop_size_height_first, crop_size_width_first), dtype=dtype)
         dst_transform = window_transform(window, target_transform)
         for b in range(1, num_bands + 1):  # bands are 1-indexed in rasterio
@@ -160,7 +218,7 @@ def read_write_sub_rasterio(image_fullpath, target_crs, target_transform,
                 dst_crs=target_crs,
                 resampling=WarpResampling.cubic
             )
-        geoTransformation = dst_transform.to_gdal()
+        geoTransformation = list(dst_transform.to_gdal())
 
     im_sub = np.transpose(im_sub, (1, 2, 0)) #should become channel-last to work with gdal
     save_name_wo_extension = os.path.splitext(im_name)[0] + '_' + str(r_count).zfill(
@@ -214,6 +272,8 @@ def read_write_sub(image_fullpath, r_start, c_start, crop_size_height, crop_size
                 no_data_vals = no_data_vals[0:3]
 
     gdal_type = ds_sub.GetRasterBand(1).DataType
+    ds_sub = None  # Release the GDAL dataset before parallel tile writing.
+    im_sub, gdal_type, no_data_vals = _float32_tile_if_needed(im_sub, gdal_type, no_data_vals)
     geoTransformation = deepcopy(list(geotrans_im))
 
     x_start = geotrans_im[0] + c_start * geotrans_im[1] + r_start * geotrans_im[2]
@@ -258,9 +318,13 @@ def tile_geotiffs(num_frames: int, random_choice_prob, cut_data_portion, resolut
                   crop_overlap_percentages=None, down_size_factors=None, middle_percentages=None,
                   tiles_dir_input=None, tiles_dir_target=None, images_path_input=None, images_path_target=None,
                   image_names_input=None, image_names_target=None,
-                  ensure_all_image=False, start_point_shift=0, bbox=None, bbox_crs=None):
+                  ensure_all_image=False, start_point_shift=0, bbox=None, bbox_crs=None,
+                  conditioned_on=None, tiling_num_workers=4):
     # The cropping bounding box in form of (minx, miny, maxx, maxy), in the same CRS as the images if bbox_crs is None
     # otherwise in the bbox_crs as "EPSG:XXXX".
+    if not isinstance(tiling_num_workers, int) or tiling_num_workers < 1:
+        raise ValueError("tiling_num_workers must be a positive integer")
+
     if middle_percentages is None:
         middle_percentages = [100]
 
@@ -273,6 +337,7 @@ def tile_geotiffs(num_frames: int, random_choice_prob, cut_data_portion, resolut
     along_row_at_least_once = []
     along_col_at_least_once = []
     epsg_codes = {}
+    processed_tile_count = 0
     for dataset_index in range(len(image_names_input[0])):
 
         random_prob = random.uniform(0.0, 1.0)
@@ -383,74 +448,120 @@ def tile_geotiffs(num_frames: int, random_choice_prob, cut_data_portion, resolut
                                 'a re-projection will happen which might affect the quality of the data'
                                 '!'.format(name_im[indx]))
 
+        if not along_row or not along_col:
+            continue
+
         with rasterio.open(fullpath_im[first_valid_index]) as src:
             target_first_crs = src.crs
-            xres, _ = src.res
             target_first_transform = src.transform
             epsg_codes[dataset_index] = target_first_crs.to_string()
 
-        for r_count, r_start_first in enumerate(along_row):
-            for c_count, c_start_first in enumerate(along_col):
-                if not (c_start_first + crop_size_width > width_im[first_valid_index] or
-                        r_start_first + crop_size_height > height_im[first_valid_index] or
-                        r_start_first < 0 or c_start_first < 0):
-                    x_start_first, y_start_first = read_write_sub(fullpath_im[first_valid_index], r_start_first,
-                                                                  c_start_first,
-                                                                  crop_size_height, crop_size_width,
-                                                                  crop_size_height_base, crop_size_width_base,
-                                                                  down_size_factor, geotrans_im[first_valid_index],
-                                                                  lead_zeros, name_im[first_valid_index],
-                                                                  prj_im[first_valid_index], r_count, c_count,
-                                                                  tiledir_im[first_valid_index], cut_data_portion,
-                                                                  discard_beyond_three_bands=discard_beyond_three_bands,
-                                                                  replace_unknown_nodata_zero=replace_unknown_nodata_zero,
-                                                                  save_tfw=save_tfw)
+        # OGR DataSource, Layer spatial filters, and CoordinateTransformation
+        # cannot safely be shared between workers. Every thread owns its own.
+        thread_data = local()
+        if conditioned_on:
+            check_ds = ogr.Open(conditioned_on, 0)
+            if check_ds is None or check_ds.GetLayerCount() == 0:
+                raise RuntimeError(f"Cannot open conditioning vector dataset: {conditioned_on}")
+            vector_srs = check_ds.GetLayerByIndex(0).GetSpatialRef()
+            if vector_srs is None:
+                raise ValueError(f"Conditioning vector dataset has no CRS: {conditioned_on}")
+            vector_wkt = vector_srs.ExportToWkt()
+            vector_crs = CRS.from_wkt(vector_wkt)
+            needs_transform = vector_crs != target_first_crs
+            if needs_transform:
+                print(f"Warning: conditioning vector {conditioned_on} will be reprojected for spatial queries")
+            check_ds = None
 
-                    for indx in range(2 * num_frames):
-                        if indx != first_valid_index:
-                            if valid_im[indx] == True: # the case that crs and resolution are the same
-                                cr = np.matmul(np.linalg.inv(
-                                    np.array(
-                                        [[geotrans_im[indx][1], geotrans_im[indx][2]],
-                                         [geotrans_im[indx][4], geotrans_im[indx][5]]])),
-                                    np.array(
-                                        [[x_start_first - geotrans_im[indx][0]],
-                                         [y_start_first - geotrans_im[indx][3]]]))
-                                c_start = int(cr[0, 0])
-                                r_start = int(cr[1, 0])
-                                c_end = c_start + crop_size_width
-                                r_end = r_start + crop_size_height
+        # Affine inverse is the same for all tiles within this image pair.
+        inverse_transforms = {}
+        for indx in range(2 * num_frames):
+            if indx != first_valid_index and valid_im[indx] is True:
+                matrix = np.array([[geotrans_im[indx][1], geotrans_im[indx][2]],
+                                   [geotrans_im[indx][4], geotrans_im[indx][5]]])
+                inverse_transforms[indx] = np.linalg.inv(matrix)
 
-                                if not (c_end > width_im[indx] or r_end > height_im[
-                                    indx] or r_start < 0 or c_start < 0):
-                                    _, _ = read_write_sub(fullpath_im[indx], r_start,
-                                                          c_start,
-                                                          crop_size_height, crop_size_width,
-                                                          crop_size_height_base, crop_size_width_base,
-                                                          down_size_factor,
-                                                          geotrans_im[indx],
-                                                          lead_zeros, name_im[indx],
-                                                          prj_im[indx], r_count, c_count,
-                                                          tiledir_im[indx],
-                                                          cut_data_portion,
-                                                          discard_beyond_three_bands=discard_beyond_three_bands,
-                                                          replace_unknown_nodata_zero=replace_unknown_nodata_zero,
-                                                          save_tfw=save_tfw)
-                            elif valid_im[indx] == 9999:
-                                read_write_sub_rasterio(fullpath_im[indx], target_first_crs, target_first_transform,
-                                                        r_start_first, c_start_first,
-                                                        crop_size_height, crop_size_width,
-                                                        crop_size_height_base, crop_size_width_base,
-                                                        down_size_factor,
-                                                        lead_zeros, name_im[indx], prj_im[first_valid_index],
-                                                        r_count, c_count, tiledir_im[indx],
-                                                        cut_data_portion,
-                                                        discard_beyond_three_bands=discard_beyond_three_bands,
-                                                        replace_unknown_nodata_zero=replace_unknown_nodata_zero,
-                                                        save_tfw=save_tfw)
+        def process_tile(tile):
+            (r_count, r_start_first), (c_count, c_start_first) = tile
+            if (c_start_first + crop_size_width > width_im[first_valid_index] or
+                    r_start_first + crop_size_height > height_im[first_valid_index] or
+                    r_start_first < 0 or c_start_first < 0):
+                return False
+
+            if conditioned_on:
+                if not hasattr(thread_data, "vector_ds"):
+                    thread_data.vector_ds = ogr.Open(conditioned_on, 0)
+                    if thread_data.vector_ds is None:
+                        raise RuntimeError(f"Cannot open conditioning vector dataset: {conditioned_on}")
+                    thread_data.transform = None
+                    if needs_transform:
+                        src_srs = osr.SpatialReference(wkt=target_first_crs.to_wkt())
+                        dst_srs = osr.SpatialReference(wkt=vector_wkt)
+                        if hasattr(src_srs, "SetAxisMappingStrategy"):
+                            src_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+                            dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+                        thread_data.transform = osr.CoordinateTransformation(src_srs, dst_srs)
+                vector_patch_bbox = get_vector_patch(
+                    geotrans_im[first_valid_index], r_start_first, c_start_first,
+                    crop_size_height, crop_size_width, thread_data.transform)
+                if not get_intersect(vector_patch_bbox, thread_data.vector_ds):
+                    return False
+
+            x_start_first, y_start_first = read_write_sub(
+                fullpath_im[first_valid_index], r_start_first, c_start_first,
+                crop_size_height, crop_size_width,
+                crop_size_height_base, crop_size_width_base, down_size_factor,
+                geotrans_im[first_valid_index], lead_zeros, name_im[first_valid_index],
+                prj_im[first_valid_index], r_count, c_count, tiledir_im[first_valid_index],
+                cut_data_portion, discard_beyond_three_bands=discard_beyond_three_bands,
+                replace_unknown_nodata_zero=replace_unknown_nodata_zero, save_tfw=save_tfw)
+
+            for indx in range(2 * num_frames):
+                if indx == first_valid_index:
+                    continue
+                if valid_im[indx] is True:
+                    cr = inverse_transforms[indx] @ np.array([
+                        x_start_first - geotrans_im[indx][0],
+                        y_start_first - geotrans_im[indx][3]])
+                    c_start, r_start = int(cr[0]), int(cr[1])
+                    if (c_start + crop_size_width > width_im[indx] or
+                            r_start + crop_size_height > height_im[indx] or
+                            r_start < 0 or c_start < 0):
+                        continue
+                    read_write_sub(
+                        fullpath_im[indx], r_start, c_start, crop_size_height,
+                        crop_size_width, crop_size_height_base, crop_size_width_base,
+                        down_size_factor, geotrans_im[indx], lead_zeros, name_im[indx],
+                        prj_im[indx], r_count, c_count, tiledir_im[indx],
+                        cut_data_portion, discard_beyond_three_bands=discard_beyond_three_bands,
+                        replace_unknown_nodata_zero=replace_unknown_nodata_zero, save_tfw=save_tfw)
+                elif valid_im[indx] == 9999:
+                    read_write_sub_rasterio(
+                        fullpath_im[indx], target_first_crs, target_first_transform,
+                        r_start_first, c_start_first, crop_size_height, crop_size_width,
+                        crop_size_height_base, crop_size_width_base, down_size_factor,
+                        lead_zeros, name_im[indx], prj_im[first_valid_index], r_count,
+                        c_count, tiledir_im[indx], cut_data_portion,
+                        discard_beyond_three_bands=discard_beyond_three_bands,
+                        replace_unknown_nodata_zero=replace_unknown_nodata_zero, save_tfw=save_tfw)
+            return True
+
+        tile_positions = product(enumerate(along_row), enumerate(along_col))
+        if tiling_num_workers == 1:
+            for tile in tile_positions:
+                processed_tile_count += bool(process_tile(tile))
+        else:
+            # Keep in-flight work bounded; executor.map() on an entire large grid
+            # would enqueue a future for every tile in Python 3.9.
+            with ThreadPoolExecutor(max_workers=tiling_num_workers) as executor:
+                while True:
+                    batch = list(islice(tile_positions, 2 * tiling_num_workers))
+                    if not batch:
+                        break
+                    processed_tile_count += sum(executor.map(process_tile, batch))
 
 
-    if along_col_at_least_once and along_row_at_least_once:
+    if processed_tile_count:
         return True, epsg_codes
     else:
         return False, None
